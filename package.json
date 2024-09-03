@@ -8,8 +8,7 @@
     "type": "git",
     "url": "<optionally the URL to your repository>"
   },
-  "bugs": {
-  },
+  "bugs": {},
   "contributors": [
     {
       "name": "Ederas"
@@ -25,7 +24,8 @@
     "lint": "eslint .",
     "lint:fix": "eslint --fix .",
     "format": "prettier --write \"./**/*.(js|cjs|mjs|json|yml|css)\"",
-    "postinstall": "husky install"
+    "postinstall": "husky init",
+    "prepare": "husky"
   },
   "devDependencies": {
     "@rollup/plugin-node-resolve": "^15.2.3",

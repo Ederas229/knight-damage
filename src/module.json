@@ -1,23 +1,21 @@
 {
   "id": "knight-damage",
-  "title": "<human readable title for knight-damage>",
-  "description": "<description of the package>",
+  "title": "Knight Damage",
+  "description": "",
   "authors": [
     {
-      "name": "<your name>",
-      "email": "<optionally your e-mail address>",
-      "discord": "<optionally your discord username>"
+      "name": "Ederas"
     }
   ],
   "url": "This is auto replaced",
-  "license": "<please choose an appropriate license. https://choosealicense.com/ is a great place to get more information if you are unsure>",
-  "readme": "<optionally the URL to your readme>",
-  "bugs": "<optionally the URL to your issue list>",
-  "changelog": "<optionally the URL to your changelog>",
+  "license": "",
+  "readme": "",
+  "bugs": "",
+  "changelog": "",
   "version": "This is auto replaced",
   "compatibility": {
-    "minimum": "10",
-    "verified": "10"
+    "minimum": "12",
+    "verified": "12"
   },
   "scripts": [],
   "esmodules": [
@@ -26,16 +24,12 @@
   "styles": [
     "styles/knight-damage.css"
   ],
-  "packs": [],
-  "languages": [
-    {
-      "lang": "en",
-      "name": "English",
-      "path": "lang/en.json"
-    }
-  ],
   "relationships": {
-    "systems": [],
+    "systems": [
+      {
+        "id": "knight",
+        "type": "system"
+      }],
     "requires": [],
     "conflicts": []
   },
