@@ -29,7 +29,7 @@ export default [
         ...globals.browser,
       },
 
-      ecmaVersion: 2020,
+      ecmaVersion: 'latest',
       sourceType: 'module',
 
       parserOptions: {

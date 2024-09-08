@@ -1,10 +1,37 @@
+import { Damage } from './damage';
+
+let context;
+
 // Initialize module
 Hooks.once('init', async () => {
   console.log('knight-damage | Initializing knight-damage');
+
+  CONFIG.statusEffects.push({ id: 'anti-anatheme', label: 'Anti-anathème', icon: 'icons/svg/explosion.svg' });
+  CONFIG.statusEffects.push({ id: 'folde', label: 'Bloque folde', icon: 'icons/svg/hazard.svg' });
+  CONFIG.statusEffects.push({
+    id: 'apply-guardian-cdf',
+    label: 'Applique Guardian Cdf',
+    icon: 'icons/svg/holy-shield.svg',
+  });
 });
 
 Hooks.on('renderChatMessage', async (message, html) => {
+  addApplyDamageButton(message, html);
+  addRevertDamageEvent(message, html);
+});
+
+Hooks.on('preCreateChatMessage', async (message) => {
+  if (!context) return;
+  message.updateSource({ 'flags.knight-damage.context': context });
+  context = undefined;
+});
+
+async function addApplyDamageButton(message, html) {
   if (!message.isRoll) return;
+
+  html.find('button.btnDgts').on('click', (event) => {
+    context = JSON.parse(event.currentTarget.dataset.all);
+  });
 
   const regex = new RegExp(`Dégâts</div>`);
   const match = message.content.match(regex);
@@ -15,103 +42,32 @@ Hooks.on('renderChatMessage', async (message, html) => {
     .find('.message-content')
     .append(`<button data-action="applyDamage">Apply Damage</button>`)
     .find('[data-action="applyDamage"]')
-    .on('click', { message: message }, handleClick);
-});
+    .on('click', { message: message }, handleClickApplyDamage);
+}
 
-async function handleClick(event) {
-  if (_token.actor.type != 'knight') return;
-  let mod = 0;
+async function addRevertDamageEvent(message, html) {
+  html.find('.revert-damage').on('click', { message: message, html: html }, handleClickRevertDamage);
+}
+
+async function handleClickRevertDamage(event) {
+  const message = event.data.message;
+  const html = event.data.html;
+  const actor = await fromUuid('Actor.' + message.speaker.actor);
+  const damage = new Damage(actor, message);
+  damage.revertDamage(message, html);
+}
+
+async function handleClickApplyDamage(event) {
+  const damage = new Damage(canvas.activeLayer.controlled[0].actor, event.data.message);
+
   try {
     if (event.shiftKey) {
-      mod = await foundry.applications.api.DialogV2.prompt({
-        window: { title: 'Damage modifier' },
-        content: '<input name="value" type="number" autofocus>',
-        modal: true,
-        rejectClose: true,
-        ok: {
-          label: 'Confirm',
-          callback: (event, button) => button.form.elements.value.valueAsNumber,
-        },
-      });
+      await damage.askModifier();
     }
-    const totalDamage = event.data.message.rolls[0].total + mod;
-    applyDamage(totalDamage);
   } catch {
     return;
   }
-}
-
-async function applyDamage(totalDamage, ignoreCdf = false) {
-  const actor = _token.actor;
-
-  let overflowDamage = 0;
-  let damageArmor;
-
-  if (ignoreCdf) {
-    damageArmor = totalDamage;
-  } else {
-    damageArmor = totalDamage - _token.actor.system.champDeForce.value;
-  }
-
-  if (damageArmor > actor.system.armure.value) {
-    overflowDamage = damageArmor - actor.system.armure.value;
-    damageArmor = actor.system.armure.value;
-  }
-
-  let damageHealth = checkHealthDamageModifier(actor, Math.trunc(damageArmor / 5));
-
-  if (actor.system.wear == 'guardian') {
-    damageHealth += overflowDamage;
-  }
-
-  if (damageHealth > actor.system.sante.value) {
-    damageHealth = actor.system.sante.value;
-  }
-
-  const armure = actor.system.armure.value - damageArmor;
-  const health = actor.system.sante.value - damageHealth;
-
-  await actor.update({
-    'system.armure.value': armure > 0 ? armure : 0,
-    'system.sante.value': health > 0 ? health : 0,
-  });
-
-  let message = '';
-
-  if (actor.system.wear == 'armure') {
-    message = '<div>Armure :</div>';
-  } else if (actor.system.wear == 'guardian') {
-    message = '<div>Guardian :</div>';
-  }
-
-  message += `<div>PA : ${damageArmor}</div>`;
-  message += `<div>PS : ${damageHealth}</div>`;
-
-  await ChatMessage.create({ user: game.userId, content: message, speaker: { actor: actor } });
-
-  if (actor.system.wear == 'armure' && armure <= 0) {
-    let opened = false;
-    if (!actor.sheet.rendered) {
-      await actor.sheet.render(true);
-      opened = true;
-    }
-    setTimeout(changeToGuardian, 10, actor);
-    setTimeout(() => {
-      if (opened) actor.sheet.close();
-    }, 1);
-    setTimeout(applyDamage, 100, overflowDamage, true);
-  }
-}
-
-function changeToGuardian(actor) {
-  actor.sheet.element.find('.armure[data-type="guardian"]').click();
-}
-
-function checkHealthDamageModifier(actor, damage) {
-  if (
-    actor.items.contents.find((e) => e.name == 'Infatigable' && e.type == 'avantage') &&
-    actor.system.wear == 'armure'
-  )
-    return 0;
-  return damage;
+  damage.calculate();
+  damage.apply();
+  damage.generateRecapMessage();
 }
