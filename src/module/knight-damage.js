@@ -1,4 +1,5 @@
-import { Damage } from './damage';
+import { DamageKnight } from './damageKnight';
+import { log } from './helpers';
 
 let context;
 
@@ -27,13 +28,15 @@ Hooks.on('preCreateChatMessage', async (message) => {
 });
 
 async function addApplyDamageButton(message, html) {
-  if (!message.isRoll) return;
-
   html.find('button.btnDgts').on('click', (event) => {
     context = JSON.parse(event.currentTarget.dataset.all);
   });
+  html.find('button.btnViolence').on('click', (event) => {
+    context = JSON.parse(event.currentTarget.dataset.all);
+  });
+  log(message);
 
-  const regex = new RegExp(`Dégâts</div>`);
+  const regex = new RegExp(`Dégâts</div>|Violence</div>|Débordement</div>`);
   const match = message.content.match(regex);
 
   if (!match) return;
@@ -53,12 +56,22 @@ async function handleClickRevertDamage(event) {
   const message = event.data.message;
   const html = event.data.html;
   const actor = await fromUuid('Actor.' + message.speaker.actor);
-  const damage = new Damage(actor, message);
+  let damage;
+  if (actor.type == 'knight') {
+    damage = new DamageKnight(actor, message);
+  } else {
+    return;
+  }
   damage.revertDamage(message, html);
 }
 
 async function handleClickApplyDamage(event) {
-  const damage = new Damage(canvas.activeLayer.controlled[0].actor, event.data.message);
+  let damage;
+  if (canvas.activeLayer.controlled[0].actor.type == 'knight') {
+    damage = new DamageKnight(canvas.activeLayer.controlled[0].actor, event.data.message);
+  } else {
+    return;
+  }
 
   try {
     if (event.shiftKey) {

@@ -11,7 +11,7 @@ export function getTraitValue(trait) {
 }
 
 export function getMessageContext(message) {
-  return message.flags['knight-damage'].context;
+  return message.flags['knight-damage']?.context;
 }
 
 export function hasStatusEffect(actor, statusEffect) {
