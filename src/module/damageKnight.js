@@ -59,6 +59,9 @@ export class DamageKnight extends DamageBase {
 
     this.baseDamage -= this.effectiveStats.cdf;
     log('Damage after Cdf', this.baseDamage);
+    if (this.baseDamage <= 0) {
+      return;
+    }
 
     this.damageRepartition.armure = 0;
     this.applyDamageTrait('destructeur');

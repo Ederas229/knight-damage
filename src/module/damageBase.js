@@ -26,6 +26,15 @@ export class DamageBase {
   constructor(actor, message) {
     this.actor = actor;
     this.baseDamage = message.rolls[0]?.total;
+    if (!this.baseDamage) {
+      const regex = new RegExp(`Débordement</div>`);
+      const match = message.content.match(regex);
+
+      if (match) {
+        const number = message.content.match(new RegExp(`>\\n\\s*\\d+\\n\\s*<`));
+        this.baseDamage = Number(number[0].match(new RegExp(`\\d+`))[0]);
+      }
+    }
 
     this.setBooleanTraits(message);
     this.setTraitsResult(message);
@@ -87,7 +96,6 @@ export class DamageBase {
           (e) => e.name == traitName[key].label,
         ).total;
       }
-      log(this.damageTraits);
     }
   }
 
