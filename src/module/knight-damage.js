@@ -20,6 +20,13 @@ Hooks.once('init', async () => {
 Hooks.on('renderChatMessage', async (message, html) => {
   addApplyDamageButton(message, html);
   addRevertDamageEvent(message, html);
+
+  html.find('button.btnDgts').on('click', (event) => {
+    setContext(event);
+  });
+  html.find('button.btnViolence').on('click', (event) => {
+    setContext(event);
+  });
 });
 
 Hooks.on('preCreateChatMessage', async (message) => {
@@ -38,12 +45,6 @@ async function setContext(event) {
 }
 
 async function addApplyDamageButton(message, html) {
-  html.find('button.btnDgts').on('click', (event) => {
-    setContext(event);
-  });
-  html.find('button.btnViolence').on('click', (event) => {
-    setContext(event);
-  });
   log(message);
 
   const regex = new RegExp(`Dégâts</div>|Violence</div>|Débordement</div>`);

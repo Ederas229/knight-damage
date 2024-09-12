@@ -30,4 +30,7 @@ export class DamageBaseNpc extends DamageBase {
       }
     }
   }
+  generateRecapMessage() {
+    super.generateRecapMessage({ whisper: game.userId });
+  }
 }
