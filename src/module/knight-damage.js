@@ -1,5 +1,6 @@
+import { DamageBande } from './damageBande';
 import { DamageKnight } from './damageKnight';
-import { log } from './helpers';
+import { hasStatusEffect, log } from './helpers';
 
 let context;
 
@@ -27,12 +28,21 @@ Hooks.on('preCreateChatMessage', async (message) => {
   context = undefined;
 });
 
+async function setContext(event) {
+  context = JSON.parse(event.currentTarget.dataset.all);
+  const actor = await fromUuid(`Actor.${context.actor.id}`);
+
+  if (hasStatusEffect(actor, 'anti-anatheme') || context.listAllE.degats.list.some((e) => e.name == 'Anti-Anathème')) {
+    context = foundry.utils.mergeObject(context, { antianatheme: true });
+  }
+}
+
 async function addApplyDamageButton(message, html) {
   html.find('button.btnDgts').on('click', (event) => {
-    context = JSON.parse(event.currentTarget.dataset.all);
+    setContext(event);
   });
   html.find('button.btnViolence').on('click', (event) => {
-    context = JSON.parse(event.currentTarget.dataset.all);
+    setContext(event);
   });
   log(message);
 
@@ -55,22 +65,34 @@ async function addRevertDamageEvent(message, html) {
 async function handleClickRevertDamage(event) {
   const message = event.data.message;
   const html = event.data.html;
-  const actor = await fromUuid('Actor.' + message.speaker.actor);
+  const token = await fromUuid(`Scene.${message.speaker.scene}.Token.${message.speaker.token}`);
+  const actor = token.actor;
   let damage;
-  if (actor.type == 'knight') {
-    damage = new DamageKnight(actor, message);
-  } else {
-    return;
+
+  switch (actor.type) {
+    case 'knight':
+      damage = new DamageKnight(actor, message);
+      break;
+    case 'bande':
+      damage = new DamageBande(actor, message);
+      break;
+    default:
+      return;
   }
   damage.revertDamage(message, html);
 }
 
 async function handleClickApplyDamage(event) {
   let damage;
-  if (canvas.activeLayer.controlled[0].actor.type == 'knight') {
-    damage = new DamageKnight(canvas.activeLayer.controlled[0].actor, event.data.message);
-  } else {
-    return;
+  switch (canvas.activeLayer.controlled[0].actor.type) {
+    case 'knight':
+      damage = new DamageKnight(canvas.activeLayer.controlled[0].actor, event.data.message);
+      break;
+    case 'bande':
+      damage = new DamageBande(canvas.activeLayer.controlled[0].actor, event.data.message);
+      break;
+    default:
+      return;
   }
 
   try {

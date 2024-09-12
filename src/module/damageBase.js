@@ -12,6 +12,7 @@ export class DamageBase {
 
   ignoreArmure = false;
   ignoreCdf = false;
+  antianatheme = false;
 
   damageTraits = {
     destructeur: { bool: false, result: 0 },
@@ -24,6 +25,8 @@ export class DamageBase {
   penetrant = 0;
 
   constructor(actor, message) {
+    log('actor : ', actor);
+    log('message : ', message);
     this.actor = actor;
     this.baseDamage = message.rolls[0]?.total;
     if (!this.baseDamage) {
@@ -41,9 +44,6 @@ export class DamageBase {
     this.setPerceArmureAndPenetrant(message);
 
     this.setActorStats();
-
-    log('actor : ', actor);
-    log('message : ', message);
   }
 
   async askModifier() {
@@ -76,6 +76,7 @@ export class DamageBase {
 
     this.ignoreArmure = context.listAllE.other.some((e) => e.name == 'Ignore Armure');
     this.ignoreCdf = context.listAllE.other.some((e) => e.name == 'Ignore Champ De Force');
+    this.antianatheme = context.antianatheme;
 
     for (const [key] of Object.entries(this.damageTraits)) {
       this.damageTraits[key].bool = context.listAllE[traitName[key].cat].list.some(
@@ -85,6 +86,7 @@ export class DamageBase {
 
     log('ignore armure : ', this.ignoreArmure);
     log('ingore Cdf : ', this.ignoreCdf);
+    log('Anti-Anathéme : ', this.antianatheme);
   }
 
   setTraitsResult(message) {
@@ -168,7 +170,7 @@ export class DamageBase {
     }
   }
 
-  revertDamage(message, html, max) {
+  revertDamage(message, html) {
     html.find('.recap').css('text-decoration', 'line-through');
     html.find('.revert-damage').remove();
 
@@ -181,9 +183,6 @@ export class DamageBase {
 
     for (const [key, value] of Object.entries(this.damageRepartition)) {
       this.actorStats[key] += value;
-      if (this.actorStats[key] > max[key]) {
-        this.actorStats[key] = max[key];
-      }
     }
 
     log('After revert', this.actorStats);
@@ -201,6 +200,9 @@ export class DamageBase {
     }
     if (this.damageRepartition.sante) {
       data = { ...data, ...{ 'system.sante.value': this.actorStats.sante } };
+    }
+    if (this.damageRepartition.cohesion) {
+      data = { ...data, ...{ 'system.sante.value': this.actorStats.cohesion } };
     }
 
     await this.actor.update(data);
@@ -221,13 +223,16 @@ export class DamageBase {
     if (this.damageRepartition.sante) {
       message += `<div>Santé : ${this.damageRepartition.sante}</div>`;
     }
+    if (this.damageRepartition.cohesion) {
+      message += `<div>Cohésion : ${this.damageRepartition.cohesion}</div>`;
+    }
 
     message += '</div>';
 
     const baseData = {
       user: game.userId,
       content: message,
-      speaker: { actor: this.actor },
+      speaker: { actor: this.actor, token: canvas.activeLayer.controlled[0].document, scene: canvas.scene },
       flags: { 'knight-damage': { recap: this.damageRepartition } },
     };
 
