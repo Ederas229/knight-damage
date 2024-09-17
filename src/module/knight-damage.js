@@ -1,4 +1,6 @@
+import { buttonLabel } from './const';
 import { DamageBande } from './damageBande';
+import { DamageCreature } from './damageCreature';
 import { DamageKnight } from './damageKnight';
 import { hasStatusEffect, log } from './helpers';
 
@@ -35,6 +37,36 @@ Hooks.on('preCreateChatMessage', async (message) => {
   context = undefined;
 });
 
+Hooks.on('renderActorSheet', async (sheet, html) => {
+  if (sheet.actor.type == 'knight') return;
+
+  let etat = sheet.actor.getFlag('knight-damage', 'anatheme')?.etat;
+  let text = sheet.actor.getFlag('knight-damage', 'anatheme')?.text;
+
+  if (!sheet.actor.getFlag('knight-damage', 'anatheme')) {
+    etat = 'selected';
+    text = buttonLabel.selected;
+
+    sheet.actor.setFlag('knight-damage', 'anatheme', { etat: etat, text: text });
+  }
+
+  html
+    .find('.tab.options')
+    .find('.main')
+    .append(`<button type="action" data-value="true" data-option="anatheme" class="${etat}">${text}</button>`)
+    .find('[data-option="anatheme"]')
+    .on('click', { actor: sheet.actor }, (event) => {
+      event.currentTarget.classList.toggle('selected');
+      event.currentTarget.classList.toggle('unselected');
+      event.currentTarget.innerHTML = buttonLabel[event.currentTarget.className];
+
+      event.data.actor.setFlag('knight-damage', 'anatheme', {
+        etat: event.currentTarget.className,
+        text: buttonLabel[event.currentTarget.className],
+      });
+    });
+});
+
 async function setContext(event) {
   context = JSON.parse(event.currentTarget.dataset.all);
   const actor = await fromUuid(`Actor.${context.actor.id}`);
@@ -51,6 +83,10 @@ async function addApplyDamageButton(message, html) {
   const match = message.content.match(regex);
 
   if (!match) return;
+
+  if (message.content.match(new RegExp(`Mode Oriflamme : Dégâts`)) && !message.getFlag('knight-damage', 'context')) {
+    message.setFlag('knight-damage', 'context', { antianatheme: true });
+  }
 
   html
     .find('.message-content')
@@ -77,6 +113,9 @@ async function handleClickRevertDamage(event) {
     case 'bande':
       damage = new DamageBande(actor, message);
       break;
+    case 'creature':
+      damage = new DamageCreature(actor, message);
+      break;
     default:
       return;
   }
@@ -91,6 +130,9 @@ async function handleClickApplyDamage(event) {
       break;
     case 'bande':
       damage = new DamageBande(canvas.activeLayer.controlled[0].actor, event.data.message);
+      break;
+    case 'creature':
+      damage = new DamageCreature(canvas.activeLayer.controlled[0].actor, event.data.message);
       break;
     default:
       return;

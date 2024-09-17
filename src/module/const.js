@@ -4,3 +4,8 @@ export const traitName = {
   fureur: { label: '+ Fureur ', cat: 'violence' },
   ultraviolence: { label: '+ Ultraviolence', cat: 'violence' },
 };
+
+export const buttonLabel = {
+  selected: " Fait partie de l'anathème ",
+  unselected: " Ne fait pas partie de l'anathème ",
+};

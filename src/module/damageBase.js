@@ -7,12 +7,13 @@ export class DamageBase {
   actorStats = {};
   effectiveStats = {};
 
-  baseDamage = 0;
+  damage = 0;
   damageRepartition = {};
 
   ignoreArmure = false;
   ignoreCdf = false;
   antianatheme = false;
+  antivehicule = false;
 
   damageTraits = {
     destructeur: { bool: false, result: 0 },
@@ -28,14 +29,14 @@ export class DamageBase {
     log('actor : ', actor);
     log('message : ', message);
     this.actor = actor;
-    this.baseDamage = message.rolls[0]?.total;
-    if (!this.baseDamage) {
+    this.damage = message.rolls[0]?.total;
+    if (!this.damage) {
       const regex = new RegExp(`Débordement</div>`);
       const match = message.content.match(regex);
 
       if (match) {
         const number = message.content.match(new RegExp(`>\\n\\s*\\d+\\n\\s*<`));
-        this.baseDamage = Number(number[0].match(new RegExp(`\\d+`))[0]);
+        this.damage = Number(number[0].match(new RegExp(`\\d+`))[0]);
       }
     }
 
@@ -59,8 +60,8 @@ export class DamageBase {
         },
       },
     });
-    this.baseDamage += mod.damage;
-    log('Modified base damage : ', this.baseDamage);
+    this.damage += mod.damage;
+    log('Modified base damage : ', this.damage);
   }
 
   setActorStats() {
@@ -74,9 +75,14 @@ export class DamageBase {
 
     if (!context) return;
 
+    this.antianatheme = context.antianatheme;
+
+    if (!context.listAllE) return;
+
     this.ignoreArmure = context.listAllE.other.some((e) => e.name == 'Ignore Armure');
     this.ignoreCdf = context.listAllE.other.some((e) => e.name == 'Ignore Champ De Force');
-    this.antianatheme = context.antianatheme;
+
+    this.antivehicule = context.listAllE.other.some((e) => e.name == 'Anti-Véhicule');
 
     for (const [key] of Object.entries(this.damageTraits)) {
       this.damageTraits[key].bool = context.listAllE[traitName[key].cat].list.some(
@@ -105,6 +111,8 @@ export class DamageBase {
     const context = getMessageContext(message);
 
     if (!context) return;
+
+    if (!context.listAllE) return;
 
     let trait;
     if ((trait = context.listAllE.other.find((e) => e.name.includes('Perce Armure')))) {
@@ -135,22 +143,22 @@ export class DamageBase {
   }
 
   applyDamageTrait(trait) {
-    if (this.damageTraits[trait].bool && this.baseDamage > 0) {
-      this.baseDamage += this.damageTraits[trait].result;
+    if (this.damageTraits[trait].bool && this.damage > 0) {
+      this.damage += this.damageTraits[trait].result;
     }
   }
 
   calculateDamageStat(stat) {
-    if (this.baseDamage > this.effectiveStats[stat]) {
-      this.baseDamage -= this.effectiveStats[stat];
+    if (this.damage > this.effectiveStats[stat]) {
+      this.damage -= this.effectiveStats[stat];
       this.damageRepartition[stat] += this.effectiveStats[stat];
       this.actorStats[stat] -= this.effectiveStats[stat];
       this.effectiveStats[stat] = 0;
     } else {
-      this.actorStats[stat] -= this.baseDamage;
-      this.damageRepartition[stat] += this.baseDamage;
-      this.baseDamage = 0;
-      this.effectiveStats[stat] -= this.baseDamage;
+      this.actorStats[stat] -= this.damage;
+      this.damageRepartition[stat] += this.damage;
+      this.damage = 0;
+      this.effectiveStats[stat] -= this.damage;
     }
   }
 

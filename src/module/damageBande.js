@@ -11,22 +11,22 @@ export class DamageBande extends DamageBaseNpc {
 
   applyViolenceTrait() {
     if (this.chair < 10) {
-      this.baseDamage += this.damageTraits.ultraviolence.result;
+      this.damage += this.damageTraits.ultraviolence.result;
     } else {
-      this.baseDamage += this.damageTraits.fureur.result;
+      this.damage += this.damageTraits.fureur.result;
     }
   }
 
   calculate() {
     log(this.actorStats);
     log(this.effectiveStats);
-    log('Base Damage : ', this.baseDamage);
+    log('Base Damage : ', this.damage);
     this.applyViolenceTrait();
-    log('Damage after traits : ', this.baseDamage);
+    log('Damage after traits : ', this.damage);
 
-    this.applyAntiAnatheme();
+    this.calculateBouclierAspectExceptionnel();
 
-    log('Damage : ', this.baseDamage);
+    log('Damage : ', this.damage);
     this.damageRepartition.cohesion = 0;
     this.calculateDamageStat('cohesion');
     log('Damage cohesion : ', this.damageRepartition);

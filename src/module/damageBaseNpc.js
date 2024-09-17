@@ -18,18 +18,25 @@ export class DamageBaseNpc extends DamageBase {
     log('Aspect Exceptionel : ', this.chairAe);
   }
 
-  applyAntiAnatheme() {
-    if (!this.antianatheme) {
-      this.baseDamage -= this.chairAe.mineur + this.chairAe.majeur;
-      log('Damage after chair exceptionnel', this.baseDamage);
-      this.baseDamage -= this.actorStats.bouclier;
-      log('Damage after bouclier');
-      if (this.baseDamage < 0) {
-        this.baseDamage = 0;
-        return;
-      }
+  calculateBouclierAspectExceptionnel() {
+    if (this.antianatheme && this.actor.getFlag('knight-damage', 'anatheme').etat == 'selected') return;
+
+    this.damage -= this.chairAe.mineur + this.chairAe.majeur;
+    log('Damage after chair exceptionnel', this.damage);
+    this.damage -= this.actorStats.bouclier;
+    log('Damage after bouclier', this.damage);
+    if (this.damage < 0) {
+      this.damage = 0;
+      return;
     }
   }
+
+  calculateDamageStatWithColosse() {
+    if ((this.actor.system.resilience.value !== 0 || this.actor.type == 'vehicule') && !this.antivehicule) {
+      this.damage = Math.trunc(this.damage / 10);
+    }
+  }
+
   generateRecapMessage() {
     super.generateRecapMessage({ whisper: game.userId });
   }

@@ -30,12 +30,12 @@ export class DamageKnight extends DamageBase {
       this.effectiveStats.cdfGuardian = 0;
     }
     log('Effective guardian cdf : ', this.effectiveStats.cdfGuardian);
-    if (this.baseDamage <= this.effectiveStats.cdfGuardian) {
-      this.baseDamage = 0;
+    if (this.damage <= this.effectiveStats.cdfGuardian) {
+      this.damage = 0;
       return;
     }
-    this.baseDamage -= this.effectiveStats.cdfGuardian;
-    log('Damage after Guardian Cdf : ', this.baseDamage);
+    this.damage -= this.effectiveStats.cdfGuardian;
+    log('Damage after Guardian Cdf : ', this.damage);
   }
 
   calculateArmureVersSante(armureDamage = 0) {
@@ -49,7 +49,7 @@ export class DamageKnight extends DamageBase {
   }
 
   calculate() {
-    log('Base Damage : ', this.baseDamage);
+    log('Base Damage : ', this.damage);
 
     this.applyTraitCdf();
     log('Effective Cdf : ', this.effectiveStats.cdf);
@@ -57,9 +57,9 @@ export class DamageKnight extends DamageBase {
     this.applyTraitArmure();
     log('Effective armure : ', this.effectiveStats.armure);
 
-    this.baseDamage -= this.effectiveStats.cdf;
-    log('Damage after Cdf', this.baseDamage);
-    if (this.baseDamage <= 0) {
+    this.damage -= this.effectiveStats.cdf;
+    log('Damage after Cdf', this.damage);
+    if (this.damage <= 0) {
       return;
     }
 
@@ -67,10 +67,10 @@ export class DamageKnight extends DamageBase {
     this.applyDamageTrait('destructeur');
     this.calculateDamageStat('armure');
     log('Damage Armure : ', this.damageRepartition.armure);
-    log('Damage after Armure : ', this.baseDamage);
+    log('Damage after Armure : ', this.damage);
 
     if (
-      this.baseDamage > 0 &&
+      this.damage > 0 &&
       this.actorStats.armure <= 0 &&
       !hasStatusEffect(this.actor, 'folde') &&
       !(this.actor.system.wear == 'guardian')
@@ -80,7 +80,7 @@ export class DamageKnight extends DamageBase {
       this.damageRepartition.armureGuardian = 0;
       this.calculateDamageStat('armureGuardian');
       log('Damage Guardian : ', this.damageRepartition.armureGuardian);
-      log('Damage after Guardian : ', this.baseDamage);
+      log('Damage after Guardian : ', this.damage);
     }
 
     this.damageRepartition.sante = 0;
