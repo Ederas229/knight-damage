@@ -32,9 +32,13 @@ export class DamageBaseNpc extends DamageBase {
   }
 
   calculateDamageStatWithColosse() {
-    if ((this.actor.system.resilience.value !== 0 || this.actor.type == 'vehicule') && !this.antivehicule) {
+    if (this.isColosseApplied()) {
       this.damage = Math.trunc(this.damage / 10);
     }
+  }
+
+  isColosseApplied() {
+    return (this.actor.system.resilience.value !== 0 || this.actor.type == 'vehicule') && !this.antivehicule;
   }
 
   generateRecapMessage() {

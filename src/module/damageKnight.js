@@ -64,7 +64,9 @@ export class DamageKnight extends DamageBase {
     }
 
     this.damageRepartition.armure = 0;
-    this.applyDamageTrait('destructeur');
+    if (this.effectiveStats.armure > 0) {
+      this.applyDamageTrait('destructeur');
+    }
     this.calculateDamageStat('armure');
     log('Damage Armure : ', this.damageRepartition.armure);
     log('Damage after Armure : ', this.damage);

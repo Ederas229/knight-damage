@@ -26,6 +26,10 @@ export class DamageBande extends DamageBaseNpc {
 
     this.calculateBouclierAspectExceptionnel();
 
+    if (this.damage <= 0) {
+      return;
+    }
+
     log('Damage : ', this.damage);
     this.damageRepartition.cohesion = 0;
     this.calculateDamageStat('cohesion');

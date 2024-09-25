@@ -1,5 +1,6 @@
 import { buttonLabel } from './const';
 import { DamageBande } from './damageBande';
+import { DamageNpc } from './damageNpc';
 import { DamageCreature } from './damageCreature';
 import { DamageKnight } from './damageKnight';
 import { hasStatusEffect, log } from './helpers';
@@ -35,6 +36,11 @@ Hooks.on('preCreateChatMessage', async (message) => {
   if (!context) return;
   message.updateSource({ 'flags.knight-damage.context': context });
   context = undefined;
+});
+
+Hooks.on('preCreateActor', async (actor) => {
+  if (actor.type != 'knight') return;
+  actor.updateSource({ 'flags.knight-damage.anatheme': { etat: 'selected', text: buttonLabel.selected } });
 });
 
 Hooks.on('renderActorSheet', async (sheet, html) => {
@@ -116,6 +122,9 @@ async function handleClickRevertDamage(event) {
     case 'creature':
       damage = new DamageCreature(actor, message);
       break;
+    case 'pnj':
+      damage = new DamageNpc(actor, message);
+      break;
     default:
       return;
   }
@@ -133,6 +142,9 @@ async function handleClickApplyDamage(event) {
       break;
     case 'creature':
       damage = new DamageCreature(canvas.activeLayer.controlled[0].actor, event.data.message);
+      break;
+    case 'pnj':
+      damage = new DamageNpc(canvas.activeLayer.controlled[0].actor, event.data.message);
       break;
     default:
       return;
