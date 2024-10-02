@@ -4,6 +4,7 @@ import { DamageNpc } from './damageNpc';
 import { DamageCreature } from './damageCreature';
 import { DamageKnight } from './damageKnight';
 import { hasStatusEffect, log } from './helpers';
+import { DamageVehicule } from './damageVehicule';
 
 let context;
 
@@ -125,6 +126,9 @@ async function handleClickRevertDamage(event) {
     case 'pnj':
       damage = new DamageNpc(actor, message);
       break;
+    case 'vehicule':
+      damage = new DamageVehicule(actor, message);
+      break;
     default:
       return;
   }
@@ -145,6 +149,9 @@ async function handleClickApplyDamage(event) {
       break;
     case 'pnj':
       damage = new DamageNpc(canvas.activeLayer.controlled[0].actor, event.data.message);
+      break;
+    case 'vehicule':
+      damage = new DamageVehicule(canvas.activeLayer.controlled[0].actor, event.data.message);
       break;
     default:
       return;

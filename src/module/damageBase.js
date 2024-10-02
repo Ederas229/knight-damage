@@ -162,19 +162,19 @@ export class DamageBase {
     }
   }
 
-  calculateArmureVersSante(armureDamage) {
+  calculateArmureVersSante(armureDamage, etat = 'sante') {
     log('total armure damage : ', armureDamage);
     let damageSante = Math.trunc(armureDamage / 5);
     log('Damage armure vers sante : ', damageSante);
 
-    if (damageSante >= this.effectiveStats.sante) {
-      this.damageRepartition.sante += this.effectiveStats.sante;
-      this.actorStats.sante -= this.effectiveStats.sante;
-      this.effectiveStats.sante = 0;
+    if (damageSante >= this.effectiveStats[etat]) {
+      this.damageRepartition[etat] += this.effectiveStats[etat];
+      this.actorStats[etat] -= this.effectiveStats[etat];
+      this.effectiveStats[etat] = 0;
     } else {
-      this.actorStats.sante -= damageSante;
-      this.effectiveStats.sante -= damageSante;
-      this.damageRepartition.sante += damageSante;
+      this.actorStats[etat] -= damageSante;
+      this.effectiveStats[etat] -= damageSante;
+      this.damageRepartition[etat] += damageSante;
     }
   }
 

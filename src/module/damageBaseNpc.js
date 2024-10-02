@@ -11,10 +11,10 @@ export class DamageBaseNpc extends DamageBase {
   }
 
   setAspectChair() {
-    this.chair = this.actor.system.aspects.chair.value;
+    this.chair = this.actor.system.aspects?.chair?.value;
 
-    this.chairAe.mineur = Number(this.actor.system.aspects.chair.ae.mineur.value);
-    this.chairAe.majeur = Number(this.actor.system.aspects.chair.ae.majeur.value);
+    this.chairAe.mineur = Number(this.actor.system.aspects?.chair?.ae.mineur.value);
+    this.chairAe.majeur = Number(this.actor.system.aspects?.chair?.ae.majeur.value);
     log('Aspect Exceptionel : ', this.chairAe);
   }
 
@@ -38,10 +38,16 @@ export class DamageBaseNpc extends DamageBase {
   }
 
   isColosseApplied() {
-    return (this.actor.system.resilience.value !== 0 || this.actor.type == 'vehicule') && !this.antivehicule;
+    return (this.actor.system.resilience?.value !== 0 || this.actor.type == 'vehicule') && !this.antivehicule;
   }
 
   generateRecapMessage() {
-    super.generateRecapMessage({ whisper: game.userId });
+    const data = {};
+
+    if (game.user.isGM) {
+      data.whisper = game.userId;
+    }
+
+    super.generateRecapMessage(data);
   }
 }
