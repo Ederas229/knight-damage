@@ -1,9 +1,10 @@
 import { buttonLabel } from './const';
+import { hasStatusEffect, log } from './helpers';
+
 import { DamageBande } from './damageBande';
 import { DamageNpc } from './damageNpc';
 import { DamageCreature } from './damageCreature';
 import { DamageKnight } from './damageKnight';
-import { hasStatusEffect, log } from './helpers';
 import { DamageVehicule } from './damageVehicule';
 
 let context;
@@ -111,51 +112,18 @@ async function handleClickRevertDamage(event) {
   const html = event.data.html;
   const token = await fromUuid(`Scene.${message.speaker.scene}.Token.${message.speaker.token}`);
   const actor = token.actor;
-  let damage;
 
-  switch (actor.type) {
-    case 'knight':
-      damage = new DamageKnight(actor, message);
-      break;
-    case 'bande':
-      damage = new DamageBande(actor, message);
-      break;
-    case 'creature':
-      damage = new DamageCreature(actor, message);
-      break;
-    case 'pnj':
-      damage = new DamageNpc(actor, message);
-      break;
-    case 'vehicule':
-      damage = new DamageVehicule(actor, message);
-      break;
-    default:
-      return;
-  }
+  const damage = createDamageObject(actor.type, actor, message);
+
   damage.revertDamage(message, html);
 }
 
 async function handleClickApplyDamage(event) {
-  let damage;
-  switch (canvas.activeLayer.controlled[0].actor.type) {
-    case 'knight':
-      damage = new DamageKnight(canvas.activeLayer.controlled[0].actor, event.data.message);
-      break;
-    case 'bande':
-      damage = new DamageBande(canvas.activeLayer.controlled[0].actor, event.data.message);
-      break;
-    case 'creature':
-      damage = new DamageCreature(canvas.activeLayer.controlled[0].actor, event.data.message);
-      break;
-    case 'pnj':
-      damage = new DamageNpc(canvas.activeLayer.controlled[0].actor, event.data.message);
-      break;
-    case 'vehicule':
-      damage = new DamageVehicule(canvas.activeLayer.controlled[0].actor, event.data.message);
-      break;
-    default:
-      return;
-  }
+  const damage = createDamageObject(
+    canvas.activeLayer.controlled[0].actor.type,
+    canvas.activeLayer.controlled[0].actor,
+    event.data.message,
+  );
 
   try {
     if (event.shiftKey) {
@@ -167,4 +135,21 @@ async function handleClickApplyDamage(event) {
   damage.calculate();
   damage.apply();
   damage.generateRecapMessage();
+}
+
+export function createDamageObject(type, actor, message) {
+  switch (type) {
+    case 'knight':
+      return new DamageKnight(actor, message);
+    case 'bande':
+      return new DamageBande(actor, message);
+    case 'creature':
+      return new DamageCreature(actor, message);
+    case 'pnj':
+      return new DamageNpc(actor, message);
+    case 'vehicule':
+      return new DamageVehicule(actor, message);
+    default:
+      return;
+  }
 }
