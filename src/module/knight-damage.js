@@ -126,43 +126,42 @@ async function handleClickRevertDamage(event) {
   const token = await fromUuid(`Scene.${message.speaker.scene}.Token.${message.speaker.token}`);
   const actor = token.actor;
 
-  const damage = createDamageObject(actor.type, actor, message);
+  const damage = createDamageObject(actor.type, token, message);
 
   damage.revertDamage(message, html);
 }
 
 async function handleClickApplyDamage(event) {
   if (canvas.activeLayer.controlled <= 0) return;
-  const damage = createDamageObject(
-    canvas.activeLayer.controlled[0].actor.type,
-    canvas.activeLayer.controlled[0].actor,
-    event.data.message,
-  );
 
-  try {
-    if (event.shiftKey) {
-      await damage.askModifier();
+  canvas.activeLayer.controlled.forEach(async (e) => {
+    const damage = createDamageObject(e.actor.type, e.document, event.data.message);
+
+    try {
+      if (event.shiftKey) {
+        await damage.askModifier();
+      }
+    } catch {
+      return;
     }
-  } catch {
-    return;
-  }
-  damage.calculate();
-  damage.apply();
-  damage.generateRecapMessage();
+    damage.calculate();
+    damage.apply();
+    damage.generateRecapMessage();
+  });
 }
 
-export function createDamageObject(type, actor, message) {
+export function createDamageObject(type, token, message) {
   switch (type) {
     case 'knight':
-      return new DamageKnight(actor, message);
+      return new DamageKnight(token, message);
     case 'bande':
-      return new DamageBande(actor, message);
+      return new DamageBande(token, message);
     case 'creature':
-      return new DamageCreature(actor, message);
+      return new DamageCreature(token, message);
     case 'pnj':
-      return new DamageNpc(actor, message);
+      return new DamageNpc(token, message);
     case 'vehicule':
-      return new DamageVehicule(actor, message);
+      return new DamageVehicule(token, message);
     default:
       return;
   }

@@ -3,6 +3,7 @@ import { traitName } from './const';
 
 export class DamageBase {
   actor;
+  token;
 
   actorStats = {};
   effectiveStats = {};
@@ -25,10 +26,11 @@ export class DamageBase {
   perceArmure = 0;
   penetrant = 0;
 
-  constructor(actor, message) {
-    log('actor : ', actor);
+  constructor(token, message) {
+    log('actor : ', token);
     log('message : ', message);
-    this.actor = actor;
+    this.token = token;
+    this.actor = token.actor;
     this.damage = message.rolls[0]?.total;
     if (!this.damage) {
       const regex = new RegExp(`Débordement</div>`);
@@ -240,7 +242,7 @@ export class DamageBase {
     const baseData = {
       user: game.userId,
       content: message,
-      speaker: { actor: this.actor, token: canvas.activeLayer.controlled[0].document, scene: canvas.scene },
+      speaker: { actor: this.actor, token: this.token, scene: canvas.scene },
       flags: { 'knight-damage': { recap: this.damageRepartition, isRecap: true } },
     };
 
