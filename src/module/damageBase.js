@@ -26,19 +26,19 @@ export class DamageBase {
   perceArmure = 0;
   penetrant = 0;
 
-  constructor(token, message) {
+  constructor(token, message, mult) {
     log('actor : ', token);
     log('message : ', message);
     this.token = token;
     this.actor = token.actor;
-    this.damage = message.rolls[0]?.total;
+    this.damage = Math.ceil(message.rolls[0]?.total * mult);
     if (!this.damage) {
       const regex = new RegExp(`Débordement</div>`);
       const match = message.content.match(regex);
 
       if (match) {
         const number = message.content.match(new RegExp(`>\\n\\s*\\d+\\n\\s*<`));
-        this.damage = Number(number[0].match(new RegExp(`\\d+`))[0]);
+        this.damage = Number(number[0].match(new RegExp(`\\d+`))[0]) * mult;
       }
     }
 

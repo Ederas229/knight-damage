@@ -5,8 +5,8 @@ export class DamageBaseNpc extends DamageBase {
   chair;
   chairAe = { mineur: 0, majeur: 0 };
 
-  constructor(actor, message) {
-    super(actor, message);
+  constructor(actor, message, mult) {
+    super(actor, message, mult);
     this.setAspectChair();
   }
 

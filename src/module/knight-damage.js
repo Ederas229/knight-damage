@@ -109,11 +109,18 @@ async function addApplyDamageButton(message, html) {
     message.setFlag('knight-damage', 'context', { antianatheme: true });
   }
 
+  html.find('.message-content').append('<div class="damageButton flexrow"><div>').find('.damageButton').html('');
+
   html
-    .find('.message-content')
+    .find('.damageButton')
     .append(`<button data-action="applyDamage">Apply Damage</button>`)
     .find('[data-action="applyDamage"]')
     .on('click', { message: message }, handleClickApplyDamage);
+  html
+    .find('.damageButton')
+    .append(`<button data-action="applyDamageHalf">Apply Half Damage</button>`)
+    .find('[data-action="applyDamageHalf"]')
+    .on('click', { message: message, mult: 0.5 }, handleClickApplyDamage);
 }
 
 async function addRevertDamageEvent(message, html) {
@@ -133,9 +140,14 @@ async function handleClickRevertDamage(event) {
 
 async function handleClickApplyDamage(event) {
   if (canvas.activeLayer.controlled <= 0) return;
+  log(event);
+  let mult = 1;
+  if (event.data.mult) {
+    mult = event.data.mult;
+  }
 
   canvas.activeLayer.controlled.forEach(async (e) => {
-    const damage = createDamageObject(e.actor.type, e.document, event.data.message);
+    const damage = createDamageObject(e.actor.type, e.document, event.data.message, mult);
 
     try {
       if (event.shiftKey) {
@@ -150,18 +162,18 @@ async function handleClickApplyDamage(event) {
   });
 }
 
-export function createDamageObject(type, token, message) {
+export function createDamageObject(type, token, message, mult = 1) {
   switch (type) {
     case 'knight':
-      return new DamageKnight(token, message);
+      return new DamageKnight(token, message, mult);
     case 'bande':
-      return new DamageBande(token, message);
+      return new DamageBande(token, message, mult);
     case 'creature':
-      return new DamageCreature(token, message);
+      return new DamageCreature(token, message, mult);
     case 'pnj':
-      return new DamageNpc(token, message);
+      return new DamageNpc(token, message, mult);
     case 'vehicule':
-      return new DamageVehicule(token, message);
+      return new DamageVehicule(token, message, mult);
     default:
       return;
   }

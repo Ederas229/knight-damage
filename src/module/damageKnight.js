@@ -4,8 +4,8 @@ import { DamageBase } from './damageBase';
 export class DamageKnight extends DamageBase {
   infatigable = false;
 
-  constructor(actor, message) {
-    super(actor, message);
+  constructor(actor, message, mult) {
+    super(actor, message, mult);
 
     this.setInfatigable();
   }
