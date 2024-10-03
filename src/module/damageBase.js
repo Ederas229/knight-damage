@@ -241,7 +241,7 @@ export class DamageBase {
       user: game.userId,
       content: message,
       speaker: { actor: this.actor, token: canvas.activeLayer.controlled[0].document, scene: canvas.scene },
-      flags: { 'knight-damage': { recap: this.damageRepartition } },
+      flags: { 'knight-damage': { recap: this.damageRepartition, isRecap: true } },
     };
 
     const mergedData = foundry.utils.mergeObject(baseData, data, { recursive: true });

@@ -32,6 +32,19 @@ Hooks.on('renderChatMessage', async (message, html) => {
   html.find('button.btnViolence').on('click', (event) => {
     setContext(event);
   });
+
+  if (!message.getFlag('knight-damage', 'isRecap')) return;
+
+  html.on('mouseenter', (event) => {
+    // eslint-disable-next-line no-undef
+    const token = fromUuidSync(`Scene.${message.speaker.scene}.Token.${message.speaker.token}`)?.object;
+    onHoverIn(event, token);
+  });
+  html.on('mouseleave', (event) => {
+    // eslint-disable-next-line no-undef
+    const token = fromUuidSync(`Scene.${message.speaker.scene}.Token.${message.speaker.token}`)?.object;
+    onHoverOut(event, token);
+  });
 });
 
 Hooks.on('preCreateChatMessage', async (message) => {
@@ -152,4 +165,13 @@ export function createDamageObject(type, actor, message) {
     default:
       return;
   }
+}
+
+async function onHoverIn(event, token) {
+  if (!canvas.ready) return;
+
+  token?.isVisible && !token.controlled && token._onHoverIn(event);
+}
+async function onHoverOut(event, token) {
+  canvas.ready && token._onHoverOut(event);
 }
