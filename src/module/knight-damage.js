@@ -132,6 +132,7 @@ async function handleClickRevertDamage(event) {
 }
 
 async function handleClickApplyDamage(event) {
+  if (canvas.activeLayer.controlled <= 0) return;
   const damage = createDamageObject(
     canvas.activeLayer.controlled[0].actor.type,
     canvas.activeLayer.controlled[0].actor,
