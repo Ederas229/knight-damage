@@ -1,7 +1,7 @@
-import { DamageBaseNpc } from './damageBaseNpc';
+import { DamageBase } from './damageBase';
 import { log } from './helpers';
 
-export class DamageVehicule extends DamageBaseNpc {
+export class DamageVehicule extends DamageBase {
   setActorStats() {
     this.actorStats.armure = this.actor.system.armure.value;
     this.actorStats.cdf = this.actor.system.champDeForce.value;

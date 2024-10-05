@@ -113,14 +113,19 @@ async function addApplyDamageButton(message, html) {
 
   html
     .find('.damageButton')
-    .append(`<button data-action="applyDamage">Apply Damage</button>`)
+    .append(`<button data-action="applyDamage">Normal</button>`)
     .find('[data-action="applyDamage"]')
     .on('click', { message: message }, handleClickApplyDamage);
   html
     .find('.damageButton')
-    .append(`<button data-action="applyDamageHalf">Apply Half Damage</button>`)
+    .append(`<button data-action="applyDamageHalf">Demi</button>`)
     .find('[data-action="applyDamageHalf"]')
     .on('click', { message: message, mult: 0.5 }, handleClickApplyDamage);
+  html
+    .find('.damageButton')
+    .append(`<button data-action="applyDamageDouble">Double</button>`)
+    .find('[data-action="applyDamageDouble"]')
+    .on('click', { message: message, mult: 2 }, handleClickApplyDamage);
 }
 
 async function addRevertDamageEvent(message, html) {
