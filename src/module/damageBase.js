@@ -174,9 +174,9 @@ export class DamageBase {
     }
   }
 
-  calculateArmureVersSante(armureDamage, etat = 'sante') {
+  calculateArmureVersSante(armureDamage, etat = 'sante', tranche = 5) {
     log('total armure damage : ', armureDamage);
-    let damageSante = Math.trunc(armureDamage / 5);
+    let damageSante = Math.trunc(armureDamage / tranche);
     log('Damage armure vers sante : ', damageSante);
 
     if (damageSante >= this.effectiveStats[etat]) {
@@ -215,6 +215,9 @@ export class DamageBase {
     if (this.damageRepartition.armure) {
       data = { ...data, ...{ 'system.armure.value': this.actorStats.armure } };
     }
+    if (this.damageRepartition.blindage) {
+      data = { ...data, ...{ 'system.blindage.value': this.actorStats.blindage } };
+    }
     if (this.damageRepartition.armureGuardian) {
       data = { ...data, ...{ 'system.equipements.guardian.armure.value': this.actorStats.armureGuardian } };
     }
@@ -236,6 +239,9 @@ export class DamageBase {
       '<div class="recap"><div>Récapitulatif des dégâts <button type="button" class="revert-damage"><i class="fa-solid fa-rotate-left"></i></button>:</div>';
     if (this.damageRepartition.armure) {
       message += `<div>Armure : ${this.damageRepartition.armure}</div>`;
+    }
+    if (this.damageRepartition.blindage) {
+      message += `<div>Blindage : ${this.damageRepartition.blindage}</div>`;
     }
     if (this.damageRepartition.armureGuardian) {
       message += `<div>Guardian : ${this.damageRepartition.armureGuardian}</div>`;

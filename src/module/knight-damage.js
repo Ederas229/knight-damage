@@ -6,6 +6,7 @@ import { DamageNpc } from './damageNpc';
 import { DamageCreature } from './damageCreature';
 import { DamageKnight } from './damageKnight';
 import { DamageVehicule } from './damageVehicule';
+import { DamageMecha } from './damageMecha';
 
 let context;
 
@@ -145,7 +146,7 @@ async function handleClickRevertDamage(event) {
 
 async function handleClickApplyDamage(event) {
   if (canvas.activeLayer.controlled <= 0) return;
-  log(event);
+
   let mult = 1;
   if (event.data.mult) {
     mult = event.data.mult;
@@ -153,6 +154,8 @@ async function handleClickApplyDamage(event) {
 
   canvas.activeLayer.controlled.forEach(async (e) => {
     const damage = createDamageObject(e.actor.type, e.document, event.data.message, mult);
+
+    if (!damage) return;
 
     try {
       if (event.shiftKey) {
@@ -179,8 +182,10 @@ export function createDamageObject(type, token, message, mult = 1) {
       return new DamageNpc(token, message, mult);
     case 'vehicule':
       return new DamageVehicule(token, message, mult);
+    case 'mechaarmure':
+      return new DamageMecha(token, message, mult);
     default:
-      return;
+      return false;
   }
 }
 

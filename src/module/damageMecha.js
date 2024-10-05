@@ -1,9 +1,9 @@
 import { DamageBase } from './damageBase';
 import { log } from './helpers';
 
-export class DamageVehicule extends DamageBase {
+export class DamageMecha extends DamageBase {
   setActorStats() {
-    this.actorStats.armure = this.actor.system.armure.value;
+    this.actorStats.blindage = this.actor.system.blindage.value;
     this.actorStats.cdf = this.actor.system.champDeForce.value;
 
     super.setActorStats();
@@ -22,19 +22,15 @@ export class DamageVehicule extends DamageBase {
       return;
     }
 
-    if (this.effectiveStats.armure > 0) {
-      this.applyDamageTrait('destructeur');
-    }
-
     this.calculateDamageStatWithColosse();
 
-    this.damageRepartition.armure = 0;
-    this.calculateDamageStat('armure');
-    log('Damage Armure : ', this.damageRepartition.armure);
-    log('Damage after Armure : ', this.damage);
+    this.damageRepartition.blindage = 0;
+    this.calculateDamageStat('blindage');
+    log('Damage blindage : ', this.damageRepartition.blindage);
+    log('Damage after blindage : ', this.damage);
 
     this.damageRepartition.passenger = 0;
-    this.calculateArmureVersSante(this.damageRepartition.armure, 'passenger');
+    this.calculateArmureVersSante(this.damageRepartition.blindage, 'passenger', 10);
     log('Damage sante : ', this.damageRepartition.passenger);
 
     log('End actor stats : ', this.actorStats);
@@ -44,7 +40,7 @@ export class DamageVehicule extends DamageBase {
   generateRecapMessage() {
     super.generateRecapMessage();
 
-    let message = '<div class="recap"><div>Dégâts sur les passagers :</div>';
+    let message = '<div class="recap"><div>Dégâts sur le pilote :</div>';
 
     message += `<div>Santé : ${this.damageRepartition.passenger}</div>`;
 
