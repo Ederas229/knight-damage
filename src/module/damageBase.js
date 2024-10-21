@@ -1,4 +1,4 @@
-import { log, getMessageContext, getTraitValue } from './helpers';
+import { log, getTraitValue, extractTraitValue, hasStatusEffect } from './helpers';
 import { traitName } from './const';
 
 export class DamageBase {
@@ -31,7 +31,8 @@ export class DamageBase {
     log('message : ', message);
     this.token = token;
     this.actor = token.actor;
-    this.damage = Math.ceil(message.rolls[0]?.total * mult);
+    const target = message.flags?.targets?.find((e) => e.id === this.token.id);
+    if (target) this.damage = Math.ceil(target.value * mult);
     if (!this.damage) {
       const regex = new RegExp(`Débordement</div>`);
       const match = message.content.match(regex);
@@ -73,54 +74,45 @@ export class DamageBase {
   }
 
   setBooleanTraits(message) {
-    const context = getMessageContext(message);
+    if (message.getFlag('knight-damage', 'isRecap')) return;
+    this.antianatheme = this.getWeaponEffects(message, 'antianatheme');
+    if (!this.antianatheme) {
+      // eslint-disable-next-line no-undef
+      const baseActor = fromUuidSync(`Actor.${message.flags.actor._id}`);
+      this.antianatheme = hasStatusEffect(baseActor, 'anti-anatheme');
+    }
 
-    if (!context) return;
+    this.ignoreArmure = this.getWeaponEffects(message, 'ignorearmure');
+    this.ignoreCdf = this.getWeaponEffects(message, 'ignorechampdeforce');
 
-    this.antianatheme = context.antianatheme;
-
-    if (!context.listAllE) return;
-
-    this.ignoreArmure = context.listAllE.other.some((e) => e.name == 'Ignore Armure');
-    this.ignoreCdf = context.listAllE.other.some((e) => e.name == 'Ignore Champ De Force');
-
-    this.antivehicule = context.listAllE.other.some((e) => e.name == 'Anti-Véhicule');
+    this.antivehicule = this.getWeaponEffects(message, 'antivehicule');
 
     for (const [key] of Object.entries(this.damageTraits)) {
-      this.damageTraits[key].bool = context.listAllE[traitName[key].cat].list.some(
-        (e) => e.name == traitName[key].label,
-      );
+      this.damageTraits[key].bool = this.getWeaponEffects(message, key);
     }
 
     log('ignore armure : ', this.ignoreArmure);
     log('ingore Cdf : ', this.ignoreCdf);
     log('Anti-Anathéme : ', this.antianatheme);
+    log('Damage trait : ', this.damageTraits);
   }
 
   setTraitsResult(message) {
-    const context = getMessageContext(message);
-
     for (const [key] of Object.entries(this.damageTraits)) {
       if (this.damageTraits[key].bool) {
-        this.damageTraits[key].result = context.listAllE[traitName[key].cat].list.find(
-          (e) => e.name == traitName[key].label,
-        ).total;
+        this.damageTraits[key].result = extractTraitValue(message, traitName[key].label);
       }
     }
   }
 
   setPerceArmureAndPenetrant(message) {
-    const context = getMessageContext(message);
-
-    if (!context) return;
-
-    if (!context.listAllE) return;
+    if (message.getFlag('knight-damage', 'isRecap')) return;
 
     let trait;
-    if ((trait = context.listAllE.other.find((e) => e.name.includes('Perce Armure')))) {
+    if ((trait = message.flags.weapon.effets.raw.find((e) => e.includes('percearmure')))) {
       this.perceArmure = getTraitValue(trait);
     }
-    if ((trait = context.listAllE.other.find((e) => e.name.includes('Pénétrant')))) {
+    if ((trait = message.flags.weapon.effets.raw.find((e) => e.includes('penetrant')))) {
       this.penetrant = getTraitValue(trait);
     }
 
@@ -267,5 +259,9 @@ export class DamageBase {
     const chat = ChatMessage.create(mergedData);
 
     log('Recap message : ', chat);
+  }
+
+  getWeaponEffects(message, effect) {
+    return message.flags.weapon.effets.raw.includes(effect);
   }
 }

@@ -4,7 +4,7 @@ import { log } from './helpers';
 export class DamageBande extends DamageBaseNpc {
   setActorStats() {
     this.actorStats.cohesion = this.actor.system.sante.value;
-    this.actorStats.bouclier = this.actor.system.bouclier.max;
+    this.actorStats.bouclier = this.actor.system.bouclier.value;
 
     super.setActorStats();
   }

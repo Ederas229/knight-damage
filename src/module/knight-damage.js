@@ -1,5 +1,5 @@
 import { buttonLabel } from './const';
-import { hasStatusEffect, log } from './helpers';
+import { log } from './helpers';
 
 import { DamageBande } from './damageBande';
 import { DamageNpc } from './damageNpc';
@@ -7,8 +7,6 @@ import { DamageCreature } from './damageCreature';
 import { DamageKnight } from './damageKnight';
 import { DamageVehicule } from './damageVehicule';
 import { DamageMecha } from './damageMecha';
-
-let context;
 
 // Initialize module
 Hooks.once('init', async () => {
@@ -27,13 +25,6 @@ Hooks.on('renderChatMessage', async (message, html) => {
   addApplyDamageButton(message, html);
   addRevertDamageEvent(message, html);
 
-  html.find('button.btnDgts').on('click', (event) => {
-    setContext(event);
-  });
-  html.find('button.btnViolence').on('click', (event) => {
-    setContext(event);
-  });
-
   if (!message.getFlag('knight-damage', 'isRecap')) return;
 
   html.on('mouseenter', (event) => {
@@ -46,12 +37,6 @@ Hooks.on('renderChatMessage', async (message, html) => {
     const token = fromUuidSync(`Scene.${message.speaker.scene}.Token.${message.speaker.token}`)?.object;
     onHoverOut(event, token);
   });
-});
-
-Hooks.on('preCreateChatMessage', async (message) => {
-  if (!context) return;
-  message.updateSource({ 'flags.knight-damage.context': context });
-  context = undefined;
 });
 
 Hooks.on('preCreateActor', async (actor) => {
@@ -88,15 +73,6 @@ Hooks.on('renderActorSheet', async (sheet, html) => {
       });
     });
 });
-
-async function setContext(event) {
-  context = JSON.parse(event.currentTarget.dataset.all);
-  const actor = await fromUuid(`Actor.${context.actor.id}`);
-
-  if (hasStatusEffect(actor, 'anti-anatheme') || context.listAllE.degats.list.some((e) => e.name == 'Anti-Anathème')) {
-    context = foundry.utils.mergeObject(context, { antianatheme: true });
-  }
-}
 
 async function addApplyDamageButton(message, html) {
   log(message);

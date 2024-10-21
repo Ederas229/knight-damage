@@ -6,12 +6,16 @@ export function log(...args) {
 }
 
 export function getTraitValue(trait) {
-  const array = trait.name.split(' ');
+  const array = trait.split(' ');
   return Number(array[array.length - 1]);
 }
 
-export function getMessageContext(message) {
-  return message.flags['knight-damage']?.context;
+export function extractTraitValue(message, trait) {
+  const number = message.content.match(
+    new RegExp(`<span class="label">${trait}<\\/span>\\s*<span class="value">\\+\\d*`),
+  );
+  if (!number) return;
+  return Number(number[0].match(new RegExp(`\\d+`))[0]);
 }
 
 export function hasStatusEffect(actor, statusEffect) {
