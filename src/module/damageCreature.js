@@ -13,8 +13,8 @@ export class DamageCreature extends DamageBaseNpc {
   calculate() {
     log('Base Damage : ', this.damage);
 
-    this.applyTraitArmure();
-    log('Effective armure : ', this.effectiveStats.armure);
+    //this.applyTraitArmure();
+    log('Effective armure : ', this.effectiveStats.armure, this.isArmorIgnored());
 
     this.calculateBouclierAspectExceptionnel();
 
@@ -22,7 +22,7 @@ export class DamageCreature extends DamageBaseNpc {
       return;
     }
 
-    if (this.effectiveStats.armure > 0) {
+    if (this.effectiveStats.armure > 0 && !this.isArmorIgnored()) {
       this.applyDamageTrait('destructeur');
     }
 
@@ -36,9 +36,11 @@ export class DamageCreature extends DamageBaseNpc {
     this.calculateDamageStatWithColosse();
 
     this.damageRepartition.armure = 0;
-    this.calculateDamageStat('armure');
-    log('Damage Armure : ', this.damageRepartition.armure);
-    log('Damage after Armure : ', this.damage);
+    if (!this.isArmorIgnored()) {
+      this.calculateDamageStat('armure');
+      log('Damage Armure : ', this.damageRepartition.armure);
+      log('Damage after Armure : ', this.damage);
+    }
 
     this.damageRepartition.sante = 0;
     this.calculateArmureVersSante(this.damageRepartition.armure);

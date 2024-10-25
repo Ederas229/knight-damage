@@ -17,7 +17,7 @@ export class DamageNpc extends DamageBaseNpc {
     this.applyTraitCdf();
     log('Effective Cdf : ', this.effectiveStats.cdf);
 
-    this.applyTraitArmure();
+    //this.applyTraitArmure();
     log('Effective armure : ', this.effectiveStats.armure);
 
     this.calculateBouclierAspectExceptionnel();
@@ -27,7 +27,7 @@ export class DamageNpc extends DamageBaseNpc {
     if (this.damage <= 0) {
       return;
     }
-    if (this.effectiveStats.armure > 0) {
+    if (this.effectiveStats.armure > 0 && !this.isArmorIgnored()) {
       this.applyDamageTrait('destructeur');
     }
 
@@ -38,9 +38,11 @@ export class DamageNpc extends DamageBaseNpc {
     this.calculateDamageStatWithColosse();
 
     this.damageRepartition.armure = 0;
-    this.calculateDamageStat('armure');
-    log('Damage Armure : ', this.damageRepartition.armure);
-    log('Damage after Armure : ', this.damage);
+    if (!this.isArmorIgnored()) {
+      this.calculateDamageStat('armure');
+      log('Damage Armure : ', this.damageRepartition.armure);
+      log('Damage after Armure : ', this.damage);
+    }
 
     this.damageRepartition.sante = 0;
     this.calculateArmureVersSante(this.damageRepartition.armure);

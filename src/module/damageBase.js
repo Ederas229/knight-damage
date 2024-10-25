@@ -136,6 +136,10 @@ export class DamageBase {
     this.effectiveStats.armure -= this.perceArmure;
   }
 
+  isArmorIgnored() {
+    return this.actorStats.armure <= this.perceArmure || this.ignoreArmure ? true : false;
+  }
+
   applyDamageTrait(trait) {
     if (this.damageTraits[trait].bool && this.damage > 0) {
       this.damage += this.damageTraits[trait].result;

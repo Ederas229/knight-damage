@@ -54,7 +54,7 @@ export class DamageKnight extends DamageBase {
     this.applyTraitCdf();
     log('Effective Cdf : ', this.effectiveStats.cdf);
 
-    this.applyTraitArmure();
+    //this.applyTraitArmure();
     log('Effective armure : ', this.effectiveStats.armure);
 
     this.damage -= this.effectiveStats.cdf;
@@ -64,12 +64,15 @@ export class DamageKnight extends DamageBase {
     }
 
     this.damageRepartition.armure = 0;
-    if (this.effectiveStats.armure > 0) {
+    if (this.effectiveStats.armure > 0 && !this.isArmorIgnored()) {
       this.applyDamageTrait('destructeur');
     }
-    this.calculateDamageStat('armure');
-    log('Damage Armure : ', this.damageRepartition.armure);
-    log('Damage after Armure : ', this.damage);
+
+    if (!this.isArmorIgnored()) {
+      this.calculateDamageStat('armure');
+      log('Damage Armure : ', this.damageRepartition.armure);
+      log('Damage after Armure : ', this.damage);
+    }
 
     if (
       this.damage > 0 &&
