@@ -82,10 +82,6 @@ async function addApplyDamageButton(message, html) {
 
   if (!match) return;
 
-  if (message.content.match(new RegExp(`Mode Oriflamme : Dégâts`)) && !message.getFlag('knight-damage', 'context')) {
-    message.setFlag('knight-damage', 'context', { antianatheme: true });
-  }
-
   html.find('.message-content').append('<div class="damageButton flexrow"><div>').find('.damageButton').html('');
 
   html

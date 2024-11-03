@@ -34,7 +34,7 @@ export class DamageBase {
     const target = message.flags?.targets?.find((e) => e.id === this.token.id);
     if (target) this.damage = Math.ceil(target.value * mult);
     if (!this.damage) {
-      const regex = new RegExp(`Débordement</div>`);
+      const regex = new RegExp(`Débordement</div>|Mode Oriflamme :`);
       const match = message.content.match(regex);
 
       if (match) {
