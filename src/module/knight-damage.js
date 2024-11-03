@@ -82,7 +82,7 @@ async function addApplyDamageButton(message, html) {
 
   if (!match) return;
 
-  html.find('.message-content').append('<div class="damageButton flexrow"><div>').find('.damageButton').html('');
+  html.find('.knight-roll').append('<div class="damageButton flexrow"><div>').find('.damageButton').html('');
 
   html
     .find('.damageButton')
