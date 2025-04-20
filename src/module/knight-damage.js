@@ -20,30 +20,33 @@ Hooks.once('init', async () => {
     icon: 'icons/svg/holy-shield.svg',
   });
   CONFIG.statusEffects.push({
-    id:'Shrine',
-    label:"Shrine",
-    icon:'icons/svg/aura.svg',
-    changes:[{
-      key: `system.champDeForce.base`,
-      mode: 2,
-      priority: 4,
-      icon:'',
-      value: 6
-    }]
+    id: 'Shrine',
+    label: 'Shrine',
+    icon: 'icons/svg/aura.svg',
+    changes: [
+      {
+        key: `system.champDeForce.base`,
+        mode: 2,
+        priority: 4,
+        icon: '',
+        value: 6,
+      },
+    ],
   });
   CONFIG.statusEffects.push({
-    id:'Shrine amélioré',
-    label:"Shrine amélioré",
-    icon:'icons/svg/angel.svg',
-    changes:[{
-      key: `system.champDeForce.base`,
-      mode: 2,
-      priority: 4,
-      icon:'',
-      value: 8
-    }]
-  })
-
+    id: 'Shrine amélioré',
+    label: 'Shrine amélioré',
+    icon: 'icons/svg/angel.svg',
+    changes: [
+      {
+        key: `system.champDeForce.base`,
+        mode: 2,
+        priority: 4,
+        icon: '',
+        value: 8,
+      },
+    ],
+  });
 });
 
 Hooks.on('renderChatMessage', async (message, html) => {
