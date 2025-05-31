@@ -14,22 +14,19 @@
   "changelog": "",
   "version": "This is auto replaced",
   "compatibility": {
-    "minimum": "12",
-    "verified": "12"
+    "minimum": "13",
+    "verified": "13"
   },
   "scripts": [],
-  "esmodules": [
-    "module/knight-damage.js"
-  ],
-  "styles": [
-    "styles/knight-damage.css"
-  ],
+  "esmodules": ["module/knight-damage.js"],
+  "styles": ["styles/knight-damage.css"],
   "relationships": {
     "systems": [
       {
         "id": "knight",
         "type": "system"
-      }],
+      }
+    ],
     "requires": [],
     "conflicts": []
   },
