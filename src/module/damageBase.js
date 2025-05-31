@@ -31,7 +31,7 @@ export class DamageBase {
     log('message : ', message);
     this.token = token;
     this.actor = token.actor;
-    const target = message.flags?.targets?.find((e) => e.id === this.token.id);
+    const target = message.flags?.knight?.targets?.find((e) => e.id === this.token.id);
     if (target) this.damage = Math.ceil(target.value * mult);
     if (!this.damage) {
       const regex = new RegExp(`Débordement</div>|Mode Oriflamme :`);
@@ -78,7 +78,7 @@ export class DamageBase {
     this.antianatheme = this.getWeaponEffects(message, 'antianatheme');
     if (!this.antianatheme) {
       // eslint-disable-next-line no-undef
-      const baseActor = fromUuidSync(`Actor.${message.flags.actor._id}`);
+      const baseActor = fromUuidSync(`Actor.${message.flags.knight.actor._id}`);
       this.antianatheme = hasStatusEffect(baseActor, 'anti-anatheme');
     }
 
@@ -109,10 +109,10 @@ export class DamageBase {
     if (message.getFlag('knight-damage', 'isRecap')) return;
 
     let trait;
-    if ((trait = message.flags.weapon.effets.raw.find((e) => e.includes('percearmure')))) {
+    if ((trait = message.flags.knight.weapon.effets.raw.find((e) => e.includes('percearmure')))) {
       this.perceArmure = getTraitValue(trait);
     }
-    if ((trait = message.flags.weapon.effets.raw.find((e) => e.includes('penetrant')))) {
+    if ((trait = message.flags.knight.weapon.effets.raw.find((e) => e.includes('penetrant')))) {
       this.penetrant = getTraitValue(trait);
     }
 
@@ -266,6 +266,7 @@ export class DamageBase {
   }
 
   getWeaponEffects(message, effect) {
-    return message.flags.weapon.effets.raw.includes(effect);
+    log('message bug', message);
+    return message.flags.knight.weapon.effets.raw.includes(effect);
   }
 }
