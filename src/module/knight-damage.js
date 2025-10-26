@@ -116,7 +116,7 @@ async function addApplyDamageButton(message, html) {
     .find('.damageButton')
     .append(`<button data-action="applyDamage">Normal</button>`)
     .find('[data-action="applyDamage"]')
-    .on('click', { message: message }, handleClickApplyDamage);
+    .on('click', { message: message, mult: 1, espoir: false }, handleClickApplyDamage);
   html
     .find('.damageButton')
     .append(`<button data-action="applyDamageHalf">Demi</button>`)
