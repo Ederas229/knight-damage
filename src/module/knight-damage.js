@@ -121,12 +121,17 @@ async function addApplyDamageButton(message, html) {
     .find('.damageButton')
     .append(`<button data-action="applyDamageHalf">Demi</button>`)
     .find('[data-action="applyDamageHalf"]')
-    .on('click', { message: message, mult: 0.5 }, handleClickApplyDamage);
+    .on('click', { message: message, mult: 0.5, espoir: false }, handleClickApplyDamage);
   html
     .find('.damageButton')
     .append(`<button data-action="applyDamageDouble">Double</button>`)
     .find('[data-action="applyDamageDouble"]')
-    .on('click', { message: message, mult: 2 }, handleClickApplyDamage);
+    .on('click', { message: message, mult: 2, espoir: false }, handleClickApplyDamage);
+  html
+    .find('.damageButton')
+    .append(`<button data-action="applyDamageEspoir">Espoir</button>`)
+    .find('[data-action="applyDamageEspoir"]')
+    .on('click', { message: message, mult: 1, espoir: true }, handleClickApplyDamage);
 }
 
 async function addRevertDamageEvent(message, html) {
@@ -147,13 +152,8 @@ async function handleClickRevertDamage(event) {
 async function handleClickApplyDamage(event) {
   if (canvas.activeLayer.controlled <= 0) return;
 
-  let mult = 1;
-  if (event.data.mult) {
-    mult = event.data.mult;
-  }
-
   canvas.activeLayer.controlled.forEach(async (e) => {
-    const damage = createDamageObject(e.actor.type, e.document, event.data.message, mult);
+    const damage = createDamageObject(e.actor.type, e.document, event.data.message, event.data.mult, event.data.espoir);
 
     if (!damage) return;
 
@@ -170,16 +170,16 @@ async function handleClickApplyDamage(event) {
   });
 }
 
-export function createDamageObject(type, token, message, mult = 1) {
+export function createDamageObject(type, token, message, mult = 1, espoir = false) {
   switch (type) {
     case 'knight':
-      return new DamageKnight(token, message, mult);
+      return new DamageKnight(token, message, mult, espoir);
     case 'bande':
       return new DamageBande(token, message, mult);
     case 'creature':
       return new DamageCreature(token, message, mult);
     case 'pnj':
-      return new DamageNpc(token, message, mult);
+      return new DamageNpc(token, message, mult, espoir);
     case 'vehicule':
       return new DamageVehicule(token, message, mult);
     case 'mechaarmure':

@@ -238,6 +238,9 @@ export class DamageBase {
     if (this.damageRepartition.cohesion) {
       data = { ...data, ...{ 'system.sante.value': this.actorStats.cohesion } };
     }
+    if (this.damageRepartition.espoir) {
+      data = { ...data, ...{ 'system.espoir.value': this.actorStats.espoir } };
+    }
 
     await this.actor.update(data);
 
@@ -262,6 +265,9 @@ export class DamageBase {
     }
     if (this.damageRepartition.cohesion) {
       message += `<div>Cohésion : ${this.damageRepartition.cohesion}</div>`;
+    }
+    if (this.damageRepartition.espoir) {
+      message += `<div>Espoir : ${this.damageRepartition.espoir}</div>`;
     }
 
     message += '</div>';

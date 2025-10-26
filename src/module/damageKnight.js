@@ -3,10 +3,12 @@ import { DamageBase } from './damageBase';
 
 export class DamageKnight extends DamageBase {
   infatigable = false;
+  espoir = false;
 
-  constructor(actor, message, mult) {
+  constructor(actor, message, mult, espoir) {
     super(actor, message, mult);
 
+    this.espoir = espoir;
     this.setInfatigable();
   }
 
@@ -18,6 +20,7 @@ export class DamageKnight extends DamageBase {
     this.actorStats.cdfGuardian = this.actor.system.equipements.guardian.champDeForce.value;
 
     this.actorStats.sante = this.actor.system.sante.value;
+    this.actorStats.espoir = this.actor.system.espoir.value;
     super.setActorStats();
   }
 
@@ -60,6 +63,16 @@ export class DamageKnight extends DamageBase {
     this.damage -= this.effectiveStats.cdf;
     log('Damage after Cdf', this.damage);
     if (this.damage <= 0) {
+      return;
+    }
+
+    if (this.espoir) {
+      this.damageRepartition.espoir = 0;
+      this.calculateDamageStat('espoir');
+
+      log('Damage Espoir : ', this.damageRepartition.espoir);
+      log('End actor stats : ', this.actorStats);
+      log('Damage repartition : ', this.damageRepartition);
       return;
     }
 

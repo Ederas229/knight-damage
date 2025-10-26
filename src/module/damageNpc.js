@@ -2,12 +2,21 @@ import { DamageBaseNpc } from './damageBaseNpc';
 import { log } from './helpers';
 
 export class DamageNpc extends DamageBaseNpc {
+  espoir = false;
+
+  constructor(actor, message, mult, espoir) {
+    super(actor, message, mult);
+
+    this.espoir = espoir;
+  }
+
   setActorStats() {
     this.actorStats.armure = this.actor.system.armure.value;
     this.actorStats.bouclier = this.actor.system.bouclier.value;
     this.actorStats.cdf = this.actor.system.champDeForce.value;
 
     this.actorStats.sante = this.actor.system.sante.value;
+    this.actorStats.espoir = this.actor.system.espoir.value;
     super.setActorStats();
   }
 
@@ -27,6 +36,17 @@ export class DamageNpc extends DamageBaseNpc {
     if (this.damage <= 0) {
       return;
     }
+
+    if (this.espoir) {
+      this.damageRepartition.espoir = 0;
+      this.calculateDamageStat('espoir');
+
+      log('Damage Espoir : ', this.damageRepartition.espoir);
+      log('End actor stats : ', this.actorStats);
+      log('Damage repartition : ', this.damageRepartition);
+      return;
+    }
+
     if (this.effectiveStats.armure > 0 && !this.isArmorIgnored()) {
       this.applyDamageTrait('destructeur');
     }
