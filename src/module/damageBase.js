@@ -34,12 +34,27 @@ export class DamageBase {
     const target = message.flags?.knight?.targets?.find((e) => e.id === this.token.id);
     if (target) this.damage = Math.ceil(target.value * mult);
     if (!this.damage) {
-      const regex = new RegExp(`Débordement</div>|Mode Oriflamme :`);
-      const match = message.content.match(regex);
+      const regexDebordement = new RegExp(`Débordement</div>`);
+      const matchDebordement = message.content.match(regexDebordement);
 
-      if (match) {
+      const regexOri = new RegExp(`Mode Oriflamme :`);
+      const matchOri = message.content.match(regexOri);
+
+      if (matchDebordement || matchOri) {
         const number = message.content.match(new RegExp(`>\\n\\s*\\d+\\n\\s*<`));
         this.damage = Number(number[0].match(new RegExp(`\\d+`))[0]) * mult;
+      }
+
+      if (matchDebordement) {
+        if (this.initiatorHasEffect(message, 'Ignore CdF')) {
+          this.addWeaponEffects(message, 'ignorechampdeforce');
+        }
+        if (this.initiatorHasEffect(message, 'Ignore Armure')) {
+          this.addWeaponEffects(message, 'ignorearmure');
+        }
+        if (this.initiatorHasEffect(message, 'Anti-véhicule')) {
+          this.addWeaponEffects(message, 'antivehicule');
+        }
       }
     }
 
@@ -266,7 +281,14 @@ export class DamageBase {
   }
 
   getWeaponEffects(message, effect) {
-    log('message bug', message);
     return message.flags.knight.weapon.effets.raw.includes(effect);
+  }
+
+  addWeaponEffects(message, effect) {
+    message.flags.knight.weapon.effets.raw.push(effect);
+  }
+
+  initiatorHasEffect(message, effect) {
+    return message.flags.knight.actor.items.find((e) => e.name == effect) != undefined ? true : false;
   }
 }
