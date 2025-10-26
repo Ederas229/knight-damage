@@ -8,6 +8,8 @@ import { DamageKnight } from './damageKnight';
 import { DamageVehicule } from './damageVehicule';
 import { DamageMecha } from './damageMecha';
 
+/*global fromUuidSync, $ */
+
 // Initialize module
 Hooks.once('init', async () => {
   console.log('knight-damage | Initializing knight-damage');
@@ -49,19 +51,18 @@ Hooks.once('init', async () => {
   });
 });
 
-Hooks.on('renderChatMessage', async (message, html) => {
+Hooks.on('renderChatMessageHTML', async (message, html) => {
+  html = $(html);
   addApplyDamageButton(message, html);
   addRevertDamageEvent(message, html);
 
   if (!message.getFlag('knight-damage', 'isRecap')) return;
 
   html.on('mouseenter', (event) => {
-    // eslint-disable-next-line no-undef
     const token = fromUuidSync(`Scene.${message.speaker.scene}.Token.${message.speaker.token}`)?.object;
     onHoverIn(event, token);
   });
   html.on('mouseleave', (event) => {
-    // eslint-disable-next-line no-undef
     const token = fromUuidSync(`Scene.${message.speaker.scene}.Token.${message.speaker.token}`)?.object;
     onHoverOut(event, token);
   });
