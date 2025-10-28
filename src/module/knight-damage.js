@@ -165,7 +165,7 @@ async function handleClickApplyDamage(event) {
     } catch {
       return;
     }
-    damage.calculate();
+    await damage.calculate();
     damage.apply();
     damage.generateRecapMessage();
   });

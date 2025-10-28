@@ -21,6 +21,7 @@ export class DamageKnight extends DamageBase {
 
     this.actorStats.sante = this.actor.system.sante.value;
     this.actorStats.espoir = this.actor.system.espoir.value;
+    this.actorStats.energie = this.actor.system.energie.value;
     super.setActorStats();
   }
 
@@ -51,7 +52,7 @@ export class DamageKnight extends DamageBase {
     super.calculateArmureVersSante(armureDamage);
   }
 
-  calculate() {
+  async calculate() {
     log('Base Damage : ', this.damage);
 
     this.applyTraitCdf();
@@ -64,6 +65,18 @@ export class DamageKnight extends DamageBase {
     log('Damage after Cdf', this.damage);
     if (this.damage <= 0) {
       return;
+    }
+
+    const corbeau = this.actorGetItem('Rire du corbeau');
+    if (corbeau?.system?.active?.base) {
+      const damageEnergie = await this.askDamageEnergie();
+      const tmpDmg = this.damage - damageEnergie;
+      this.damage = damageEnergie;
+      this.damageRepartition.energie = 0;
+      this.calculateDamageStat('energie');
+      this.damage += tmpDmg;
+
+      log('Rire du corbeau', damageEnergie);
     }
 
     if (this.espoir) {
@@ -170,5 +183,30 @@ export class DamageKnight extends DamageBase {
     setTimeout(() => {
       if (opened) this.actor.sheet.close();
     }, 10);
+  }
+
+  async askDamageEnergie() {
+    let damageEnergie = 0;
+    try {
+      damageEnergie = await foundry.applications.api.DialogV2.prompt({
+        window: { title: 'Rire du corbeau' },
+        content: `<input name="value" type="number" value="${Math.trunc(this.damage / 2)}" autofocus>`,
+        modal: true,
+        rejectClose: true,
+        ok: {
+          label: 'Confirm',
+          callback: (event, button) => {
+            const value = button.form.elements.value.valueAsNumber;
+            if (value <= 0) return 0;
+            if (value >= Math.trunc(this.damage / 2)) return Math.trunc(this.damage / 2);
+            return value;
+          },
+        },
+      });
+    } catch {
+      //pass
+    }
+
+    return damageEnergie;
   }
 }

@@ -221,8 +221,9 @@ export class DamageBase {
     this.apply();
   }
 
-  async apply() {
+  apply() {
     let data = {};
+
     if (this.damageRepartition.armure) {
       data = { ...data, ...{ 'system.armure.value': this.actorStats.armure } };
     }
@@ -242,8 +243,14 @@ export class DamageBase {
       data = { ...data, ...{ 'system.espoir.value': this.actorStats.espoir } };
     }
 
-    await this.actor.update(data);
+    log('deep clone data ', foundry.utils.deepClone(data));
+    this.actor.update(data);
 
+    if (this.damageRepartition.energie) {
+      data = { 'system.energie.value': this.actorStats.energie };
+    }
+
+    this.actor.update(data);
     log('Applied data', data);
   }
 
@@ -251,6 +258,9 @@ export class DamageBase {
     log('generate message data : ', data);
     let message =
       '<div class="recap"><div>Récapitulatif des dégâts <button type="button" class="revert-damage"><i class="fa-solid fa-rotate-left"></i></button>:</div>';
+    if (this.damageRepartition.energie) {
+      message += `<div>Energie : ${this.damageRepartition.energie}</div>`;
+    }
     if (this.damageRepartition.armure) {
       message += `<div>Armure : ${this.damageRepartition.armure}</div>`;
     }
@@ -296,5 +306,9 @@ export class DamageBase {
 
   initiatorHasEffect(message, effect) {
     return message.flags.knight.actor.items.find((e) => e.name == effect) != undefined ? true : false;
+  }
+
+  actorGetItem(itemName) {
+    return this.actor.items.find((e) => e.name == itemName);
   }
 }
