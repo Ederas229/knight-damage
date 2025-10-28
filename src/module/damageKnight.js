@@ -3,6 +3,7 @@ import { DamageBase } from './damageBase';
 
 export class DamageKnight extends DamageBase {
   infatigable = false;
+  cuirDuTaureau = false;
   espoir = false;
 
   constructor(actor, message, mult, espoir) {
@@ -10,6 +11,7 @@ export class DamageKnight extends DamageBase {
 
     this.espoir = espoir;
     this.setInfatigable();
+    this.setCuirTaureau();
   }
 
   setActorStats() {
@@ -27,6 +29,12 @@ export class DamageKnight extends DamageBase {
 
   setInfatigable() {
     this.infatigable = this.actor.items.contents.find((e) => e.name == 'Infatigable' && e.type == 'avantage');
+  }
+
+  setCuirTaureau() {
+    const taureau = this.actorGetItem('Cuir du taureau');
+    if (!taureau?.system?.active?.base) return;
+    this.cuirDuTaureau = true;
   }
 
   applyGuardianCdf() {
@@ -90,11 +98,11 @@ export class DamageKnight extends DamageBase {
     }
 
     this.damageRepartition.armure = 0;
-    if (this.effectiveStats.armure > 0 && !this.isArmorIgnored()) {
+    if (this.effectiveStats.armure > 0 && (!this.isArmorIgnored() || this.cuirDuTaureau)) {
       this.applyDamageTrait('destructeur');
     }
 
-    if (!this.isArmorIgnored()) {
+    if (!this.isArmorIgnored() || this.cuirDuTaureau) {
       this.calculateDamageStat('armure');
       log('Damage Armure : ', this.damageRepartition.armure);
       log('Damage after Armure : ', this.damage);
