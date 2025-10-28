@@ -33,7 +33,7 @@ export class DamageKnight extends DamageBase {
 
   setCuirTaureau() {
     const taureau = this.actorGetItem('Cuir du taureau');
-    if (!taureau?.system?.active?.base) return;
+    if (taureau?.system?.active?.base || taureau === undefined) return;
     this.cuirDuTaureau = true;
   }
 
