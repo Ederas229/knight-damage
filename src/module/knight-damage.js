@@ -51,6 +51,21 @@ Hooks.once('init', async () => {
   });
 });
 
+Hooks.on('preUpdateChatMessage', async (message, data) => {
+  log(
+    'event declenché',
+    foundry.utils.deepClone(data),
+    !data?.flags?.knight?.weapon?.effets?.raw,
+    data?.flags?.knight?.weapon?.effets?.raw.includes('antianatheme'),
+  );
+  if (!data?.flags?.knight?.weapon?.effets?.raw) return;
+  if (data?.flags?.knight?.weapon?.effets?.raw.includes('antianatheme')) return;
+  if (!data.flags.knight.actor.statuses.has('anti-anatheme')) return;
+
+  data.flags.knight.weapon.effets.raw.push('antianatheme');
+  log('update message add anti');
+});
+
 Hooks.on('renderChatMessageHTML', async (message, html) => {
   html = $(html);
   addApplyDamageButton(message, html);
