@@ -89,6 +89,7 @@ export class DamageKnight extends DamageBase {
 
     if (this.espoir) {
       this.damage -= this.actor.system.espoir.reduction;
+      if (this.damage < 0) this.damage = 0;
       this.damageRepartition.espoir = 0;
       this.calculateDamageStat('espoir');
 
