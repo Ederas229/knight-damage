@@ -51,7 +51,10 @@ export class DamageNpc extends DamageBaseNpc {
       this.applyDamageTrait('destructeur');
     }
 
-    if (Math.trunc(this.damage / 10) > this.effectiveStats.armure) {
+    if (
+      (Math.trunc(this.damage / 10) > this.effectiveStats.armure && this.isColosseApplied()) ||
+      (this.damage > this.effectiveStats.armure && !this.isColosseApplied())
+    ) {
       this.applyDamageTrait('meurtrier');
     }
 
