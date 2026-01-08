@@ -1,9 +1,9 @@
 import { buttonLabel } from './const';
 import { log } from './helpers';
 
-import { DamageBande } from './damageBande';
-import { DamageNpc } from './damageNpc';
-import { DamageCreature } from './damageCreature';
+//import { DamageBande } from './damageBande';
+//import { DamageNpc } from './damageNpc';
+//import { DamageCreature } from './damageCreature';
 import { DamageKnight } from './damageKnight';
 import { DamageVehicule } from './damageVehicule';
 import { DamageMecha } from './damageMecha';
@@ -119,6 +119,8 @@ async function addApplyDamageButton(message, html) {
 
   if (!match) return;
 
+  if (message.flags.knight.actor.type == 'knight') return;
+
   html.find('.knight-roll').append('<div class="damageButton flexrow"><div>').find('.damageButton').html('');
 
   html
@@ -183,12 +185,12 @@ export function createDamageObject(type, token, message, mult = 1, espoir = fals
   switch (type) {
     case 'knight':
       return new DamageKnight(token, message, mult, espoir);
-    case 'bande':
-      return new DamageBande(token, message, mult);
-    case 'creature':
-      return new DamageCreature(token, message, mult);
-    case 'pnj':
-      return new DamageNpc(token, message, mult, espoir);
+    //case 'bande':
+    //return new DamageBande(token, message, mult);
+    //case 'creature':
+    //return new DamageCreature(token, message, mult);
+    //case 'pnj':
+    //return new DamageNpc(token, message, mult, espoir);
     case 'vehicule':
       return new DamageVehicule(token, message, mult);
     case 'mechaarmure':
