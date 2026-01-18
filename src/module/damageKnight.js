@@ -1,15 +1,17 @@
-import { hasStatusEffect, log } from './helpers';
+import { hasStatusEffect, log, generateReminderData } from './helpers';
 import { DamageBase } from './damageBase';
 
 export class DamageKnight extends DamageBase {
   infatigable = false;
   cuirDuTaureau = false;
   espoir = false;
+  anatheme = false;
 
   constructor(actor, message, mult, espoir) {
     super(actor, message, mult);
 
     this.espoir = espoir;
+    this.anatheme = message.flags.knight?.weapon?.effets?.raw.includes('anatheme') ? true : false;
     this.setInfatigable();
     this.setCuirTaureau();
   }
@@ -96,6 +98,17 @@ export class DamageKnight extends DamageBase {
       log('Damage Espoir : ', this.damageRepartition.espoir);
       log('End actor stats : ', this.actorStats);
       log('Damage repartition : ', this.damageRepartition);
+
+      //if (!this.anatheme) return;
+      log('trait anatheme présent');
+      const origin = await foundry.utils.fromUuid(this.origin);
+
+      origin.actor.setFlag(
+        'knight-damage',
+        'espoir',
+        await generateReminderData(origin, this.actor, this.damageRepartition.espoir, 'espoir'),
+      );
+
       return;
     }
 
@@ -135,12 +148,17 @@ export class DamageKnight extends DamageBase {
   }
 
   async revertDamage(message, html) {
+    log(this);
     html.find('.recap').css('text-decoration', 'line-through');
     html.find('.revert-damage').remove();
 
     message.update({ content: html.find('.message-content').html() });
     const recap = message.flags['knight-damage'].recap;
     const wear = message.flags['knight-damage'].wear;
+    const anatheme = message.flags['knight-damage'].anatheme;
+    const uuidOrigin = message.flags['knight-damage'].origin;
+
+    log(anatheme);
 
     if (wear == 'armure' && this.actor.system.wear != 'armure') {
       this.switchArmure('armure');
@@ -162,6 +180,18 @@ export class DamageKnight extends DamageBase {
     setTimeout(setActorStats, 100);
     log('After revert', this.actorStats);
     setTimeout(this.apply.bind(this), 101);
+
+    //if (!anatheme) return;
+    if (!this.damageRepartition.espoir) return;
+    log('trait anatheme présent');
+    const origin = await foundry.utils.fromUuid(uuidOrigin);
+    log(origin);
+
+    origin.actor.setFlag(
+      'knight-damage',
+      'espoir',
+      await generateReminderData(origin, this.actor, this.damageRepartition.espoir, 'espoir', true),
+    );
   }
 
   async apply() {
@@ -174,9 +204,13 @@ export class DamageKnight extends DamageBase {
   generateRecapMessage(data = {}) {
     log(this);
     super.generateRecapMessage(
-      foundry.utils.mergeObject({ flags: { 'knight-damage': { wear: this.actor.system.wear } } }, data, {
-        recursive: true,
-      }),
+      foundry.utils.mergeObject(
+        { flags: { 'knight-damage': { wear: this.actor.system.wear, anatheme: this.anatheme } } },
+        data,
+        {
+          recursive: true,
+        },
+      ),
     );
   }
 

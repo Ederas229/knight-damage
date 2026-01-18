@@ -1,4 +1,4 @@
-import { buttonLabel } from './const';
+//import { buttonLabel } from './const';
 import { log } from './helpers';
 
 //import { DamageBande } from './damageBande';
@@ -76,12 +76,36 @@ Hooks.on('renderChatMessageHTML', async (message, html) => {
   });
 });
 
-Hooks.on('preCreateActor', async (actor) => {
+Hooks.on('preCreateActiveEffect', async (effect) => {
+  const effectName = effect.name;
+  const actor = effect.target;
+  let message = `<div>Dégâts d'espoir infligés :</div>`;
+
+  if (effectName != 'Dead') return;
+  if (actor.flags['knight-damage']?.espoir == undefined) return;
+
+  for (const [key, value] of Object.entries(actor.flags['knight-damage'].espoir)) {
+    if (value == 0) continue;
+    const keyActor = await fromUuid(key.replaceAll('_', '.'));
+    message += `<div>${keyActor.name} : ${value} (${Math.trunc(value / 6)}d6)</div>`;
+    log(keyActor.name, ' : ', value);
+  }
+
+  const data = {
+    user: game.userId,
+    content: message,
+  };
+
+  const chat = ChatMessage.create(data);
+  log(chat);
+});
+
+/* Hooks.on('preCreateActor', async (actor) => {
   if (actor.type != 'knight') return;
   actor.updateSource({ 'flags.knight-damage.anatheme': { etat: 'selected', text: buttonLabel.selected } });
 });
 
-Hooks.on('renderActorSheet', async (sheet, html) => {
+ Hooks.on('renderActorSheet', async (sheet, html) => {
   if (sheet.actor.type == 'knight') return;
 
   let etat = sheet.actor.getFlag('knight-damage', 'anatheme')?.etat;
@@ -109,7 +133,7 @@ Hooks.on('renderActorSheet', async (sheet, html) => {
         text: buttonLabel[event.currentTarget.className],
       });
     });
-});
+}); */
 
 async function addApplyDamageButton(message, html) {
   log(message);
@@ -119,6 +143,7 @@ async function addApplyDamageButton(message, html) {
 
   if (!match) return;
 
+  if (message.flags.knight == undefined) return;
   if (message.flags.knight.actor.type == 'knight') return;
 
   html.find('.knight-roll').append('<div class="damageButton flexrow"><div>').find('.damageButton').html('');
@@ -181,6 +206,15 @@ async function handleClickApplyDamage(event) {
   });
 }
 
+/**
+ *
+ * @param {String} type
+ * @param {TokenDocument} token
+ * @param {Message} message
+ * @param {Number} mult
+ * @param {boolean} espoir
+ * @returns {DamageKnight | false}
+ */
 export function createDamageObject(type, token, message, mult = 1, espoir = false) {
   switch (type) {
     case 'knight':

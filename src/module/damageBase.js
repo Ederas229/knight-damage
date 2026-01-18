@@ -4,6 +4,7 @@ import { traitName } from './const';
 export class DamageBase {
   actor;
   token;
+  origin;
 
   actorStats = {};
   effectiveStats = {};
@@ -31,6 +32,9 @@ export class DamageBase {
     log('message : ', message);
     this.token = token;
     this.actor = token.actor;
+    this.origin = `Scene.${message.speaker.scene}.Token.${message.speaker.token}`;
+    log('Origine :', this.origin);
+
     const target = message.flags?.knight?.targets?.find((e) => e.id === this.token.id);
     if (target) this.damage = Math.ceil(target.value * mult);
     if (!this.damage) {
@@ -286,7 +290,7 @@ export class DamageBase {
       user: game.userId,
       content: message,
       speaker: { actor: this.actor, token: this.token, scene: canvas.scene },
-      flags: { 'knight-damage': { recap: this.damageRepartition, isRecap: true } },
+      flags: { 'knight-damage': { recap: this.damageRepartition, isRecap: true, origin: this.origin } },
     };
 
     const mergedData = foundry.utils.mergeObject(baseData, data, { recursive: true });
