@@ -5,6 +5,7 @@ export class DamageVehicule extends DamageBase {
   setActorStats() {
     this.actorStats.armure = this.actor.system.armure.value;
     this.actorStats.cdf = this.actor.system.champDeForce.value;
+    this.actorStats.energie = this.actor.system.energie.value;
 
     super.setActorStats();
   }
@@ -22,11 +23,17 @@ export class DamageVehicule extends DamageBase {
       return;
     }
 
-    if (this.effectiveStats.armure > 0) {
+    if (this.effectiveStats.armure > 0 && !this.energie) {
       this.applyDamageTrait('destructeur');
     }
 
     this.calculateDamageStatWithColosse();
+
+    log('target energie : ', this.energie);
+    if (this.energie) {
+      this.calculateEnergie();
+      return;
+    }
 
     this.damageRepartition.armure = 0;
     this.calculateDamageStat('armure');
@@ -43,6 +50,8 @@ export class DamageVehicule extends DamageBase {
 
   generateRecapMessage() {
     super.generateRecapMessage();
+
+    if (this.damageRepartition.energie) return;
 
     let message = '<div class="recap"><div>Dégâts sur les passagers :</div>';
 

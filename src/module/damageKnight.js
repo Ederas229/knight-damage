@@ -7,10 +7,10 @@ export class DamageKnight extends DamageBase {
   espoir = false;
   anatheme = false;
 
-  constructor(actor, message, mult, espoir) {
-    super(actor, message, mult);
+  constructor(actor, message, mult, targetStat) {
+    super(actor, message, mult, targetStat);
 
-    this.espoir = espoir;
+    this.espoir = targetStat == 'espoir' ? true : false;
     this.anatheme = message.flags.knight?.weapon?.effets?.raw.includes('anatheme') ? true : false;
     this.setInfatigable();
     this.setCuirTaureau();
@@ -100,7 +100,7 @@ export class DamageKnight extends DamageBase {
       log('Damage repartition : ', this.damageRepartition);
 
       //if (!this.anatheme) return;
-      log('trait anatheme présent');
+      //log('trait anatheme présent');
       const origin = await foundry.utils.fromUuid(this.origin);
 
       origin.actor.setFlag(
@@ -109,6 +109,12 @@ export class DamageKnight extends DamageBase {
         await generateReminderData(origin, this.actor, this.damageRepartition.espoir, 'espoir'),
       );
 
+      return;
+    }
+
+    log('target energie : ', this.energie);
+    if (this.energie) {
+      this.calculateEnergie();
       return;
     }
 
@@ -181,17 +187,18 @@ export class DamageKnight extends DamageBase {
     log('After revert', this.actorStats);
     setTimeout(this.apply.bind(this), 101);
 
-    //if (!anatheme) return;
-    if (!this.damageRepartition.espoir) return;
-    log('trait anatheme présent');
-    const origin = await foundry.utils.fromUuid(uuidOrigin);
-    log(origin);
+    if (this.damageRepartition.espoir) {
+      const origin = await foundry.utils.fromUuid(uuidOrigin);
+      log(origin);
 
-    origin.actor.setFlag(
-      'knight-damage',
-      'espoir',
-      await generateReminderData(origin, this.actor, this.damageRepartition.espoir, 'espoir', true),
-    );
+      origin.actor.setFlag(
+        'knight-damage',
+        'espoir',
+        await generateReminderData(origin, this.actor, this.damageRepartition.espoir, 'espoir', true),
+      );
+    }
+
+    this.revertEnergieReminder(uuidOrigin);
   }
 
   async apply() {

@@ -1,4 +1,4 @@
-import { log, getTraitValue, extractTraitValue, hasStatusEffect } from './helpers';
+import { log, getTraitValue, extractTraitValue, hasStatusEffect, generateReminderData } from './helpers';
 import { traitName } from './const';
 
 export class DamageBase {
@@ -10,6 +10,7 @@ export class DamageBase {
   effectiveStats = {};
 
   damage = 0;
+  energie = false;
   damageRepartition = {};
 
   ignoreArmure = false;
@@ -27,13 +28,17 @@ export class DamageBase {
   perceArmure = 0;
   penetrant = 0;
 
-  constructor(token, message, mult) {
+  constructor(token, message, mult, targetStat) {
     log('actor : ', token);
     log('message : ', message);
     this.token = token;
     this.actor = token.actor;
     this.origin = `Scene.${message.speaker.scene}.Token.${message.speaker.token}`;
     log('Origine :', this.origin);
+
+    log('target stat : ', targetStat);
+
+    this.energie = targetStat == 'energie' ? true : false;
 
     const target = message.flags?.knight?.targets?.find((e) => e.id === this.token.id);
     if (target) this.damage = Math.ceil(target.value * mult);
@@ -205,7 +210,27 @@ export class DamageBase {
     }
   }
 
+  async calculateEnergie() {
+    if (this.damage < 0) this.damage = 0;
+    this.damageRepartition.energie = 0;
+    this.calculateDamageStat('energie');
+
+    log('Damage Energie : ', this.damageRepartition.energie);
+    log('End actor stats : ', this.actorStats);
+    log('Damage repartition : ', this.damageRepartition);
+
+    const origin = await foundry.utils.fromUuid(this.origin);
+
+    origin.actor.setFlag(
+      'knight-damage',
+      'energie',
+      await generateReminderData(origin, this.actor, this.damageRepartition.energie, 'energie'),
+    );
+  }
+
   revertDamage(message, html) {
+    const uuidOrigin = message.flags['knight-damage'].origin;
+
     html.find('.recap').css('text-decoration', 'line-through');
     html.find('.revert-damage').remove();
 
@@ -223,6 +248,20 @@ export class DamageBase {
     log('After revert', this.actorStats);
 
     this.apply();
+
+    this.revertEnergieReminder(uuidOrigin);
+  }
+
+  async revertEnergieReminder(uuidOrigin) {
+    if (!this.damageRepartition.energie) return;
+    const origin = await foundry.utils.fromUuid(uuidOrigin);
+    log(origin);
+
+    origin.actor.setFlag(
+      'knight-damage',
+      'energie',
+      await generateReminderData(origin, this.actor, this.damageRepartition.energie, 'energie', true),
+    );
   }
 
   apply() {
@@ -253,6 +292,7 @@ export class DamageBase {
     if (this.damageRepartition.energie) {
       data = { 'system.energie.value': this.actorStats.energie };
     }
+    log('deep clone data energie ', foundry.utils.deepClone(data));
 
     this.actor.update(data);
     log('Applied data', data);

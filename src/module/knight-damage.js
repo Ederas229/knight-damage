@@ -79,12 +79,26 @@ Hooks.on('renderChatMessageHTML', async (message, html) => {
 Hooks.on('preCreateActiveEffect', async (effect) => {
   const effectName = effect.name;
   const actor = effect.target;
-  let message = `<div>Dégâts d'espoir infligés :</div>`;
+  log('actor : ', actor);
 
   if (effectName != 'Dead') return;
-  if (actor.flags['knight-damage']?.espoir == undefined) return;
 
-  for (const [key, value] of Object.entries(actor.flags['knight-damage'].espoir)) {
+  const stats = ['espoir', 'energie'];
+
+  for (const stat of stats) {
+    generateReminderMessage(actor, stat);
+  }
+});
+
+async function generateReminderMessage(actor, stat) {
+  log(stat);
+  const listReminder = actor.getFlag('knight-damage', stat);
+
+  if (listReminder == undefined) return;
+
+  let message = `<div>Dégâts d'${stat} infligés :</div>`;
+
+  for (const [key, value] of Object.entries(listReminder)) {
     if (value == 0) continue;
     const keyActor = await fromUuid(key.replaceAll('_', '.'));
     message += `<div>${keyActor.name} : ${value} (${Math.trunc(value / 6)}d6)</div>`;
@@ -98,7 +112,7 @@ Hooks.on('preCreateActiveEffect', async (effect) => {
 
   const chat = ChatMessage.create(data);
   log(chat);
-});
+}
 
 /* Hooks.on('preCreateActor', async (actor) => {
   if (actor.type != 'knight') return;
@@ -152,22 +166,27 @@ async function addApplyDamageButton(message, html) {
     .find('.damageButton')
     .append(`<button data-action="applyDamage">Normal</button>`)
     .find('[data-action="applyDamage"]')
-    .on('click', { message: message, mult: 1, espoir: false }, handleClickApplyDamage);
+    .on('click', { message: message, mult: 1, target: false }, handleClickApplyDamage);
   html
     .find('.damageButton')
     .append(`<button data-action="applyDamageHalf">Demi</button>`)
     .find('[data-action="applyDamageHalf"]')
-    .on('click', { message: message, mult: 0.5, espoir: false }, handleClickApplyDamage);
+    .on('click', { message: message, mult: 0.5, target: false }, handleClickApplyDamage);
   html
     .find('.damageButton')
     .append(`<button data-action="applyDamageDouble">Double</button>`)
     .find('[data-action="applyDamageDouble"]')
-    .on('click', { message: message, mult: 2, espoir: false }, handleClickApplyDamage);
+    .on('click', { message: message, mult: 2, target: false }, handleClickApplyDamage);
   html
     .find('.damageButton')
     .append(`<button data-action="applyDamageEspoir">Espoir</button>`)
     .find('[data-action="applyDamageEspoir"]')
-    .on('click', { message: message, mult: 1, espoir: true }, handleClickApplyDamage);
+    .on('click', { message: message, mult: 1, target: 'espoir' }, handleClickApplyDamage);
+  html
+    .find('.damageButton')
+    .append(`<button data-action="applyDamageEnergie">Energie</button>`)
+    .find('[data-action="applyDamageEnergie"]')
+    .on('click', { message: message, mult: 1, target: 'energie' }, handleClickApplyDamage);
 }
 
 async function addRevertDamageEvent(message, html) {
@@ -189,7 +208,7 @@ async function handleClickApplyDamage(event) {
   if (canvas.activeLayer.controlled <= 0) return;
 
   canvas.activeLayer.controlled.forEach(async (e) => {
-    const damage = createDamageObject(e.actor.type, e.document, event.data.message, event.data.mult, event.data.espoir);
+    const damage = createDamageObject(e.actor.type, e.document, event.data.message, event.data.mult, event.data.target);
 
     if (!damage) return;
 
@@ -215,10 +234,10 @@ async function handleClickApplyDamage(event) {
  * @param {boolean} espoir
  * @returns {DamageKnight | false}
  */
-export function createDamageObject(type, token, message, mult = 1, espoir = false) {
+export function createDamageObject(type, token, message, mult = 1, target = false) {
   switch (type) {
     case 'knight':
-      return new DamageKnight(token, message, mult, espoir);
+      return new DamageKnight(token, message, mult, target);
     //case 'bande':
     //return new DamageBande(token, message, mult);
     //case 'creature':
@@ -226,9 +245,9 @@ export function createDamageObject(type, token, message, mult = 1, espoir = fals
     //case 'pnj':
     //return new DamageNpc(token, message, mult, espoir);
     case 'vehicule':
-      return new DamageVehicule(token, message, mult);
+      return new DamageVehicule(token, message, mult, target);
     case 'mechaarmure':
-      return new DamageMecha(token, message, mult);
+      return new DamageMecha(token, message, mult, target);
     default:
       return false;
   }

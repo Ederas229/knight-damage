@@ -5,6 +5,7 @@ export class DamageMecha extends DamageBase {
   setActorStats() {
     this.actorStats.blindage = this.actor.system.blindage.value;
     this.actorStats.cdf = this.actor.system.champDeForce.value;
+    this.actorStats.energie = this.actor.system.energie.value;
 
     super.setActorStats();
   }
@@ -24,6 +25,12 @@ export class DamageMecha extends DamageBase {
 
     this.calculateDamageStatWithColosse();
 
+    log('target energie : ', this.energie);
+    if (this.energie) {
+      this.calculateEnergie();
+      return;
+    }
+
     this.damageRepartition.blindage = 0;
     this.calculateDamageStat('blindage');
     log('Damage blindage : ', this.damageRepartition.blindage);
@@ -39,6 +46,8 @@ export class DamageMecha extends DamageBase {
 
   generateRecapMessage() {
     super.generateRecapMessage();
+
+    if (this.damageRepartition.energie) return;
 
     let message = '<div class="recap"><div>Dégâts sur le pilote :</div>';
 
