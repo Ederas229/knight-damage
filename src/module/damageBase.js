@@ -1,4 +1,4 @@
-import { log, getTraitValue, extractTraitValue, hasStatusEffect, generateReminderData } from './helpers';
+import { log, getTraitValue, extractTraitValue, hasStatusEffect } from './helpers';
 import { traitName } from './const';
 
 export class DamageBase {
@@ -220,12 +220,14 @@ export class DamageBase {
     log('Damage repartition : ', this.damageRepartition);
 
     const origin = await foundry.utils.fromUuid(this.origin);
+    const user = game.users.activeGM;
 
-    origin.actor.setFlag(
-      'knight-damage',
-      'energie',
-      await generateReminderData(origin, this.actor, this.damageRepartition.energie, 'energie'),
-    );
+    await user.query('knight-damage.addReminder', {
+      uuidOrigin: origin.uuid,
+      uuidActor: this.actor.uuid,
+      value: this.damageRepartition.energie,
+      stat: 'energie',
+    });
   }
 
   revertDamage(message, html) {
@@ -254,14 +256,15 @@ export class DamageBase {
 
   async revertEnergieReminder(uuidOrigin) {
     if (!this.damageRepartition.energie) return;
-    const origin = await foundry.utils.fromUuid(uuidOrigin);
-    log(origin);
+    const user = game.users.activeGM;
 
-    origin.actor.setFlag(
-      'knight-damage',
-      'energie',
-      await generateReminderData(origin, this.actor, this.damageRepartition.energie, 'energie', true),
-    );
+    await user.query('knight-damage.addReminder', {
+      uuidOrigin: uuidOrigin,
+      uuidActor: this.actor.uuid,
+      value: this.damageRepartition.energie,
+      stat: 'energie',
+      revert: true,
+    });
   }
 
   apply() {

@@ -1,4 +1,4 @@
-import { hasStatusEffect, log, generateReminderData } from './helpers';
+import { hasStatusEffect, log } from './helpers';
 import { DamageBase } from './damageBase';
 
 export class DamageKnight extends DamageBase {
@@ -102,12 +102,14 @@ export class DamageKnight extends DamageBase {
       //if (!this.anatheme) return;
       //log('trait anatheme présent');
       const origin = await foundry.utils.fromUuid(this.origin);
+      const user = game.users.activeGM;
 
-      origin.actor.setFlag(
-        'knight-damage',
-        'espoir',
-        await generateReminderData(origin, this.actor, this.damageRepartition.espoir, 'espoir'),
-      );
+      await user.query('knight-damage.addReminder', {
+        uuidOrigin: origin.uuid,
+        uuidActor: this.actor.uuid,
+        value: this.damageRepartition.espoir,
+        stat: 'espoir',
+      });
 
       return;
     }
@@ -188,14 +190,15 @@ export class DamageKnight extends DamageBase {
     setTimeout(this.apply.bind(this), 101);
 
     if (this.damageRepartition.espoir) {
-      const origin = await foundry.utils.fromUuid(uuidOrigin);
-      log(origin);
+      const user = game.users.activeGM;
 
-      origin.actor.setFlag(
-        'knight-damage',
-        'espoir',
-        await generateReminderData(origin, this.actor, this.damageRepartition.espoir, 'espoir', true),
-      );
+      await user.query('knight-damage.addReminder', {
+        uuidOrigin: uuidOrigin,
+        uuidActor: this.actor.uuid,
+        value: this.damageRepartition.espoir,
+        stat: 'espoir',
+        revert: true,
+      });
     }
 
     this.revertEnergieReminder(uuidOrigin);

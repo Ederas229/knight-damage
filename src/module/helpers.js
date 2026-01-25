@@ -46,7 +46,7 @@ export function hasStatusEffect(actor, statusEffect) {
  * @param {Number} value
  * @param {String} stat
  * @param {boolean} isRevert
- * @returns void
+ * @returns data
  */
 export async function generateReminderData(origin, actor, value, stat, isRevert = false) {
   const data = {};
@@ -62,7 +62,7 @@ export async function generateReminderData(origin, actor, value, stat, isRevert 
 
   data[actorUuid] += value;
 
-  log('generateEspoirData :', data);
+  log('generate reminder Data :', data);
 
   return data;
 }

@@ -30,7 +30,7 @@
     "requires": [],
     "conflicts": []
   },
-  "socket": false,
+  "socket": true,
   "manifest": "This is auto replaced",
   "download": "This is auto replaced",
   "library": false

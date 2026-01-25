@@ -7,6 +7,7 @@ import { log } from './helpers';
 import { DamageKnight } from './damageKnight';
 import { DamageVehicule } from './damageVehicule';
 import { DamageMecha } from './damageMecha';
+import { generateReminderData } from './helpers';
 
 /*global fromUuidSync, $ */
 
@@ -49,7 +50,17 @@ Hooks.once('init', async () => {
       },
     ],
   });
+
+  CONFIG.queries['knight-damage.addReminder'] = addReminder;
 });
+
+async function addReminder({ uuidOrigin, uuidActor, value, stat, revert }) {
+  log('query', uuidOrigin, uuidActor, value, stat, revert);
+  const actor = await foundry.utils.fromUuid(uuidActor);
+  const origin = await foundry.utils.fromUuid(uuidOrigin);
+
+  origin.actor.setFlag('knight-damage', stat, await generateReminderData(origin, actor, value, stat, revert));
+}
 
 Hooks.on('preUpdateChatMessage', async (message, data) => {
   if (!data?.flags?.knight?.weapon?.effets?.raw) return;
