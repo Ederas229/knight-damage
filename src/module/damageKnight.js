@@ -19,6 +19,7 @@ export class DamageKnight extends DamageBase {
   setActorStats() {
     this.actorStats.armure = this.actor.system.armure.value;
     this.actorStats.cdf = this.actor.system.champDeForce.value;
+    this.actorStats.egide = this.actor.system.egide.value;
 
     this.actorStats.armureGuardian = this.actor.system.equipements.guardian.armure.value;
     this.actorStats.cdfGuardian = this.actor.system.equipements.guardian.champDeForce.value;
@@ -64,6 +65,10 @@ export class DamageKnight extends DamageBase {
 
   async calculate() {
     log('Base Damage : ', this.damage);
+
+    this.damage -= this.actorStats.egide;
+    log('Egide :', this.actorStats.egide);
+    log('Damage after Egide', this.damage);
 
     this.applyTraitCdf();
     log('Effective Cdf : ', this.effectiveStats.cdf);
