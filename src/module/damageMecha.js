@@ -13,6 +13,8 @@ export class DamageMecha extends DamageBase {
   calculate() {
     log('Base Damage : ', this.damage);
 
+    this.calculateDamageStatWithColosse();
+
     this.applyTraitCdf();
     log('Effective Cdf : ', this.effectiveStats.cdf);
 
@@ -22,8 +24,6 @@ export class DamageMecha extends DamageBase {
     if (this.damage <= 0) {
       return;
     }
-
-    this.calculateDamageStatWithColosse();
 
     log('target energie : ', this.energie);
     if (this.energie) {
