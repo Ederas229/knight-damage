@@ -6,12 +6,14 @@ export class DamageKnight extends DamageBase {
   cuirDuTaureau = false;
   espoir = false;
   anatheme = false;
+  applyEgide = false;
 
   constructor(actor, message, mult, targetStat) {
     super(actor, message, mult, targetStat);
 
     this.espoir = targetStat == 'espoir' ? true : false;
     this.anatheme = message.flags.knight?.weapon?.effets?.raw.includes('anatheme') ? true : false;
+    this.applyEgide = message.flags.knight?.actor?.system?.origin == 'anatheme' ? true : false;
     this.setInfatigable();
     this.setCuirTaureau();
   }
@@ -66,9 +68,11 @@ export class DamageKnight extends DamageBase {
   async calculate() {
     log('Base Damage : ', this.damage);
 
-    this.damage -= this.actorStats.egide;
-    log('Egide :', this.actorStats.egide);
-    log('Damage after Egide', this.damage);
+    if (this.applyEgide) {
+      this.damage -= this.actorStats.egide;
+      log('Egide :', this.actorStats.egide);
+      log('Damage after Egide', this.damage);
+    }
 
     this.applyTraitCdf();
     log('Effective Cdf : ', this.effectiveStats.cdf);
