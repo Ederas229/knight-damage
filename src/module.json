@@ -14,8 +14,8 @@
   "changelog": "",
   "version": "This is auto replaced",
   "compatibility": {
-    "minimum": "12",
-    "verified": "13"
+    "minimum": "14",
+    "verified": "14"
   },
   "scripts": [],
   "esmodules": ["module/knight-damage.js"],
