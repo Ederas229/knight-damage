@@ -15,17 +15,33 @@ import { generateReminderData } from './helpers';
 Hooks.once('init', async () => {
   console.log('knight-damage | Initializing knight-damage');
 
-  CONFIG.statusEffects.push({ id: 'anti-anatheme', label: 'Anti-anathème', icon: 'icons/svg/explosion.svg' });
-  CONFIG.statusEffects.push({ id: 'folde', label: 'Bloque folde', icon: 'icons/svg/hazard.svg' });
   CONFIG.statusEffects.push({
-    id: 'apply-guardian-cdf',
-    label: 'Applique Guardian Cdf',
-    icon: 'icons/svg/holy-shield.svg',
+    id: 'anti-anatheme',
+    name: 'Anti-anathème',
+    label: 'Anti-anathème',
+    icon: 'icons/svg/explosion.svg',
+    img: 'icons/svg/explosion.svg',
   });
   CONFIG.statusEffects.push({
-    id: 'Shrine',
+    id: 'folde',
+    name: 'Bloque folde',
+    label: 'Bloque folde',
+    icon: 'icons/svg/hazard.svg',
+    img: 'icons/svg/hazard.svg',
+  });
+  CONFIG.statusEffects.push({
+    id: 'apply-guardian-cdf',
+    name: 'Applique Guardian Cdf',
+    label: 'Applique Guardian Cdf',
+    icon: 'icons/svg/holy-shield.svg',
+    img: 'icons/svg/holy-shield.svg',
+  });
+  CONFIG.statusEffects.push({
+    id: 'shrine',
+    name: 'Shrine',
     label: 'Shrine',
     icon: 'icons/svg/aura.svg',
+    img: 'icons/svg/aura.svg',
     changes: [
       {
         key: `system.champDeForce.base`,
@@ -37,9 +53,11 @@ Hooks.once('init', async () => {
     ],
   });
   CONFIG.statusEffects.push({
-    id: 'Shrine amélioré',
+    id: 'shrine-ameliore',
+    name: 'Shrine amélioré',
     label: 'Shrine amélioré',
     icon: 'icons/svg/angel.svg',
+    img: 'icons/svg/angel.svg',
     changes: [
       {
         key: `system.champDeForce.base`,
