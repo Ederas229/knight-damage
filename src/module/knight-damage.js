@@ -143,6 +143,75 @@ async function generateReminderMessage(actor, stat) {
   log(chat);
 }
 
+Hooks.on('renderModuleSheet', async (module, html) => {
+  if (module.object.name !== 'Instinct du loup') return;
+
+  log(module.object);
+
+  if (module.object.flags['knight-damage']?.loup == undefined) {
+    log('create flags');
+    const flag = {
+      choc: 'unactive',
+      degatscontinus: 'unactive',
+      percearmure: 'unactive',
+      peur: 'unactive',
+      ignorearmure: 'unactive',
+      ignorecdf: 'unactive',
+      drainenergie: 'unactive',
+      domination: 'unactive',
+    };
+    await module.object.setFlag('knight-damage', 'loup', flag);
+    return;
+  }
+
+  const flag = module.object.getFlag('knight-damage', 'loup');
+
+  html.find('.niveau_n1').prepend(
+    `<div class="main">
+          <div class="col">
+            <div class="oneLine">
+              <button type="action" data-value="true" data-option="choc" class="${flag.choc}">Choc X</button>
+            </div>
+            <div class="oneLine">
+              <button type="action" data-value="true" data-option="degatscontinus" class="${flag.degatscontinus}">Dégâts continus X</button>
+            </div>
+            <div class="oneLine">
+              <button type="action" data-value="true" data-option="percearmure" class="${flag.percearmure}">Perce armure X</button>
+            </div>
+            <div class="oneLine">
+              <button type="action" data-value="true" data-option="peur" class="${flag.peur}">Peur (capacité ennemie)</button>
+            </div>
+          </div>
+          <div class="col">
+            <div class="oneLine">
+              <button type="action" data-value="true" data-option="ignorearmure" class="${flag.ignorearmure}">Ignore Armure</button>
+            </div>
+            <div class="oneLine">
+              <button type="action" data-value="true" data-option="ignorecdf" class="${flag.ignorecdf}">Ignore CdF</button>
+            </div>
+            <div class="oneLine">
+              <button type="action" data-value="true" data-option="drainenergie" class="${flag.drainenergie}">Drain d'énergie (capacité ennemie)</button>
+            </div>
+            <div class="oneLine">
+              <button type="action" data-value="true" data-option="domination" class="${flag.domination}">Domination (capacité ennemie)</button>
+            </div>
+            
+          </div>
+        </div>`,
+  );
+
+  for (const [key] of Object.entries(flag)) {
+    html.find(`[data-option=${key}]`).on('click', { module: module.object }, (event) => {
+      event.currentTarget.classList.toggle('unactive');
+      event.currentTarget.classList.toggle('active');
+
+      const flag = event.data.module.getFlag('knight-damage', 'loup');
+      flag[key] = event.currentTarget.className;
+      event.data.module.setFlag('knight-damage', 'loup', flag);
+    });
+  }
+});
+
 /* Hooks.on('preCreateActor', async (actor) => {
   if (actor.type != 'knight') return;
   actor.updateSource({ 'flags.knight-damage.anatheme': { etat: 'selected', text: buttonLabel.selected } });

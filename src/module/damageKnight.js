@@ -42,6 +42,23 @@ export class DamageKnight extends DamageBase {
     this.cuirDuTaureau = true;
   }
 
+  applyInstinctDuLoup() {
+    const loup = this.actorGetItem('Instinct du loup');
+    if (loup?.system?.active?.base || loup === undefined) return;
+    const flag = loup.getFlag('knight-damage', 'loup');
+    if (flag === undefined) return;
+
+    if (flag.percearmure === 'active') {
+      this.perceArmure = 0;
+    }
+    if (flag.ignorearmure === 'active') {
+      this.ignoreArmure = false;
+    }
+    if (flag.ignorecdf === 'active') {
+      this.ignoreCdf = false;
+    }
+  }
+
   applyGuardianCdf() {
     if (this.effectiveStats.cdfGuardian <= this.penetrant || this.ignoreCdf) {
       this.effectiveStats.cdfGuardian = 0;
@@ -67,6 +84,8 @@ export class DamageKnight extends DamageBase {
 
   async calculate() {
     log('Base Damage : ', this.damage);
+
+    this.applyInstinctDuLoup();
 
     if (this.applyEgide) {
       this.damage -= this.actorStats.egide;
