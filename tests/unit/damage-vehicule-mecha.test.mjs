@@ -140,8 +140,8 @@ describe('vehicule', () => {
     });
 
     damage.apply();
-    // CHARACTERIZATION: first update is empty (no armure/sante repartition),
-    // the energie write is the second update.
+    // INTENDED (author): apply() always double-updates — first update is
+    // empty (no armure/sante repartition), the energie write is the second.
     expect(actor.updates[0]).toEqual({});
     expect(actor.updates[1]).toEqual({ 'system.energie.value': 9 });
   });
@@ -196,7 +196,7 @@ describe('mechaarmure', () => {
     expect(damage.damageRepartition).toEqual({ blindage: 30, passenger: 3 });
   });
 
-  it('CHARACTERIZATION: mecha WITHOUT a resilience stat has colosse on (resilience?.value undefined !== 0)', () => {
+  it('INTENDED (author): mecha WITHOUT a resilience stat has colosse on (resilience?.value undefined !== 0)', () => {
     const system = mechaSystem();
     delete system.resilience;
     const { damage } = mechaFixture({ system, targetValue: 60 });

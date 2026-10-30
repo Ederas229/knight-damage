@@ -275,8 +275,9 @@ describe('energie target path', () => {
     });
 
     await damage.apply();
-    // CHARACTERIZATION: the first update carries no stat (armure/sante were
-    // never touched on this path), the energie write happens in the second.
+    // INTENDED (author): apply() always double-updates — the first update
+    // carries no stat (armure/sante were never touched on this path), the
+    // energie write happens in the second.
     expect(actor.updates[0]).toEqual({});
     expect(actor.updates[1]).toEqual({ 'system.energie.value': 0 });
   });
