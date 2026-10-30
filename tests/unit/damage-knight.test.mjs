@@ -141,15 +141,18 @@ describe('armor bypass (worn armor <= perce-armure)', () => {
     expect(damage.actorStats.armure).toBe(30);
     expect(damage.actorStats.sante).toBe(0);
     expect(damage.damageRepartition).toEqual({ armure: 0, sante: 20 });
-    // CHARACTERIZATION: with the armure track skipped, damage beyond sante
-    // (56 - 20 = 36) is left on this.damage and silently dropped, and the
-    // guardian branch never runs because actorStats.armure is still > 0.
+    // CHARACTERIZATION (INTENDED per module author): with the armure track
+    // skipped, damage beyond sante (56 - 20 = 36) is left on this.damage and
+    // silently dropped, and the guardian branch never runs because
+    // actorStats.armure is still > 0. This overflow loss is by design — do not "fix".
     expect(damage.damage).toBe(36);
   });
 
   it('cuirDuTaureau re-engages the armure track despite the bypass', async () => {
-    // CHARACTERIZATION: an item counts as ACTIVE when system.active.base is
-    // FALSY (setCuirTaureau early-returns on a truthy base).
+    // CHARACTERIZATION (INTENDED per module author): an item counts as ACTIVE
+    // when system.active.base is FALSY (setCuirTaureau early-returns on a
+    // truthy base). The inverted-looking guard is the knight system's
+    // convention here — do not "fix" it.
     const { damage } = knightFixture({
       system: knightSystem({ armure: 30 }),
       actorItems: [makeItem('Cuir du taureau', { system: { active: { base: false } } })],
@@ -165,6 +168,8 @@ describe('armor bypass (worn armor <= perce-armure)', () => {
   });
 
   it('instinct-du-loup flag percearmure:"active" zeroes perceArmure, restoring armor behavior for the worn victim', async () => {
+    // Same "active when system.active.base is falsy" convention as Cuir du
+    // taureau above — INTENDED per module author.
     const loup = makeItem('Instinct du loup', {
       system: { active: { base: false } },
       flags: { 'knight-damage': { loup: { percearmure: 'active' } } },

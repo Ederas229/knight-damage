@@ -24,6 +24,7 @@ Foundry VTT **module** (`knight-damage`) that adds damage-apply tooling on top o
 - All persistent data lives under `knight-damage` document flags (actor, module). Actor UUIDs are stored in flags with `.` replaced by `_` (`generateReminderData` / `generateReminderMessage` rely on this round-trip).
 - Debug logging: use `log()` from `src/module/helpers.js`, gated by a `devMode` constant at the top of that file — plain `console.log` is not filtered.
 - UI/domain strings are French; commit messages are written in French.
+- Behaviors that **look like bugs but are intended** (confirmed by the author) — never "fix" them, unit tests pin them: (1) items like *Cuir du taureau* / *Instinct du loup* are active when `system.active.base` is **falsy**; (2) when knight armor is bypassed (`isArmorIgnored()`), damage beyond sante is silently dropped; (3) vehicule/mecha passenger-pilote recap messages carry no `knight-damage` flags — passenger damage is applied and reverted **manually**.
 
 ## Conventions
 

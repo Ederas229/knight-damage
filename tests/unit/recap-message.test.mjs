@@ -147,8 +147,9 @@ describe('vehicule recap messages', () => {
 
     expect(passengerMsg.content).toContain('Dégâts sur les passagers');
     expect(passengerMsg.content).toContain('<div>Santé : 2</div>');
-    // CHARACTERIZATION: the passenger message is created WITHOUT any
-    // knight-damage flags, so it has no revert affordance of its own.
+    // CHARACTERIZATION (INTENDED per module author): the passenger message is
+    // created WITHOUT any knight-damage flags, so it has no revert affordance
+    // of its own — passenger damage is applied and reverted manually.
     expect(passengerMsg.flags).toBeUndefined();
     expect(passengerMsg.speaker.token).toBeDefined();
   });
