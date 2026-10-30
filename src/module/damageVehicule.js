@@ -16,7 +16,7 @@ export class DamageVehicule extends DamageBase {
     this.applyTraitCdf();
     log('Effective Cdf : ', this.effectiveStats.cdf);
 
-    if (this.isColosseApplied && Math.trunc(this.damage / 10) - this.effectiveStats.cdf > 0 && !this.energie) {
+    if (this.isColosseApplied() && Math.trunc(this.damage / 10) - this.effectiveStats.cdf > 0 && !this.energie) {
       this.applyDamageTrait('destructeur');
     }
 
@@ -29,7 +29,7 @@ export class DamageVehicule extends DamageBase {
       return;
     }
 
-    if (this.effectiveStats.armure > 0 && !this.energie && !this.isColosseApplied) {
+    if (this.effectiveStats.armure > 0 && !this.energie && !this.isColosseApplied()) {
       this.applyDamageTrait('destructeur');
     }
 
