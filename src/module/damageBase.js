@@ -51,7 +51,7 @@ export class DamageBase {
 
       if (matchDebordement || matchOri) {
         const number = message.content.match(new RegExp(`>\\n\\s*\\d+\\n\\s*<`));
-        this.damage = Number(number[0].match(new RegExp(`\\d+`))[0]) * mult;
+        this.damage = Math.ceil(Number(number[0].match(new RegExp(`\\d+`))[0]) * mult);
       }
 
       if (matchDebordement) {
@@ -190,7 +190,6 @@ export class DamageBase {
       this.actorStats[stat] -= this.damage;
       this.damageRepartition[stat] += this.damage;
       this.damage = 0;
-      this.effectiveStats[stat] -= this.damage;
     }
   }
 

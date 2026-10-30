@@ -70,9 +70,9 @@ describe('Débordement / Mode Oriflamme content fallback', () => {
     const token = makeToken(makeActor('knight', {}), { id: 'token-def' });
     const message = makeKnightMessage({ content, targets: [] });
     const damage = new DamageBase(token, message, 0.5, false);
-    // CHARACTERIZATION: the Débordement fallback multiplies by mult WITHOUT
-    // Math.ceil (unlike the targets path) — 43 * 0.5 = 21.5 is kept as-is.
-    expect(damage.damage).toBe(21.5);
+    // FIXED 2026-10-30 (author confirmed oversight): the Débordement fallback
+    // now applies Math.ceil like the targets path — 43 * 0.5 = 21.5 -> 22.
+    expect(damage.damage).toBe(22);
   });
 
   it('also triggers on the "Mode Oriflamme :" marker', () => {
@@ -254,12 +254,13 @@ describe('calculateDamageStat', () => {
     expect(dmg.damage).toBe(0);
     expect(dmg.actorStats.armure).toBe(0);
     expect(dmg.damageRepartition.armure).toBe(30);
-    // CHARACTERIZATION: equality is NOT the overflow branch, so effectiveStats
-    // stays untouched here as well (the -= 0 quirk, see below).
+    // effectiveStats stays untouched on equality — the dead `- 0` leftover in
+    // the else branch was removed 2026-10-30 (author confirmed), behavior
+    // unchanged: the partial branch never decremented effectiveStats anyway.
     expect(dmg.effectiveStats.armure).toBe(30);
   });
 
-  it('CHARACTERIZATION: on the partial branch effectiveStats is NOT decremented (damage is zeroed before the subtraction)', () => {
+  it('on the partial branch effectiveStats is not decremented (dead `- 0` leftover removed; no observable change)', () => {
     const dmg = statFixture({ damage: 10, statValue: 30 });
     expect(dmg.effectiveStats.armure).toBe(30);
   });
@@ -326,7 +327,7 @@ describe('calculateDamageStatWithColosse / isColosseApplied', () => {
     expect(dmg.damage).toBe(6);
   });
 
-  it('CHARACTERIZATION: an actor WITHOUT a resilience stat has colosse on (undefined !== 0)', () => {
+  it('INTENDED (author): an actor WITHOUT a resilience stat has colosse on (undefined !== 0)', () => {
     const dmg = colosseFixture({ actorType: 'mechaarmure' });
     expect(dmg.isColosseApplied()).toBe(true);
     expect(dmg.damage).toBe(6);
@@ -375,7 +376,7 @@ describe('apply() update payload mapping', () => {
     expect(actor.updates[1]).toEqual({ 'system.energie.value': 11 });
   });
 
-  it('CHARACTERIZATION: cohesion damage is written to "system.sante.value" (damageBase.js:286)', () => {
+  it('INTENDED (author): cohesion damage is written to "system.sante.value"', () => {
     const actor = applyFixture({
       repartition: { cohesion: 2 },
       stats: { cohesion: 8 },
@@ -383,7 +384,7 @@ describe('apply() update payload mapping', () => {
     expect(actor.updates[0]).toEqual({ 'system.sante.value': 8 });
   });
 
-  it('CHARACTERIZATION: when both sante and cohesion are in the repartition, the cohesion entry overwrites the sante one', () => {
+  it('INTENDED (consequence of the cohesion mapping): when both sante and cohesion are in the repartition, the cohesion entry overwrites the sante one', () => {
     const actor = applyFixture({
       repartition: { sante: 7, cohesion: 2 },
       stats: { sante: 13, cohesion: 8 },
@@ -391,7 +392,7 @@ describe('apply() update payload mapping', () => {
     expect(actor.updates[0]).toEqual({ 'system.sante.value': 8 });
   });
 
-  it('CHARACTERIZATION: apply() always calls actor.update twice; without an energie repartition the second call repeats the first payload', () => {
+  it('INTENDED (author): apply() always calls actor.update twice; without an energie repartition the second call repeats the first payload', () => {
     const actor = applyFixture({
       repartition: { sante: 7 },
       stats: { sante: 13 },
@@ -400,7 +401,7 @@ describe('apply() update payload mapping', () => {
     expect(actor.updates[1]).toEqual({ 'system.sante.value': 13 });
   });
 
-  it('CHARACTERIZATION: an empty repartition still emits update({}) twice', () => {
+  it('INTENDED (author): an empty repartition still emits update({}) twice', () => {
     const actor = applyFixture({ repartition: {}, stats: {} });
     expect(actor.updates).toEqual([{}, {}]);
   });
