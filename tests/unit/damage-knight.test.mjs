@@ -6,6 +6,7 @@ import {
   clearUuidRegistry,
   resetRecorders,
   recordedQueries,
+  recordedMessages,
   recordedDialogPrompts,
   setDialogPrompt,
   setDialogPromptCallback,
@@ -810,5 +811,49 @@ describe('guardian branch gates (damageKnight.js:162-174)', () => {
     // toEqual with no armureGuardian key pins that lines 170-171 never ran.
     expect(damage.damageRepartition).toEqual({ armure: 30, sante: 6 });
     expect(damage.actorStats.sante).toBe(14);
+  });
+});
+
+// Review-4 F1: the 2026-10-31 null-guard turned the Débordement-with-no-numeric-fragment
+// crash into a 0-damage object — but handleClickApplyDamage (knight-damage.js) never
+// checks damage before driving the pipeline, so the flow still COMPLETES end-to-end.
+// CHARACTERIZATION: the completed flow is a silent no-op — calculate() early-returns at
+// damageKnight.js:104 (0 - effective CdF 10 = -10 <= 0, no stats touched), apply() still
+// emits the INTENDED double update with empty payloads, and generateRecapMessage still
+// posts a flagged recap chat message whose repartition is empty.
+describe('0-damage end-to-end flow (Débordement marker, no numeric fragment)', () => {
+  it('damage 0 flows through the whole pipeline as a silent no-op: calculate() early-returns, apply() emits [{}, {}], the recap message has no stat lines and flags.recap is {}', async () => {
+    registerUuid('Actor.actor-atk', makeActor('pnj', {}, { id: 'actor-atk' }));
+    registerUuid(ATTACKER_UUID, { uuid: ATTACKER_UUID });
+    const actor = makeActor('knight', knightSystem(), {
+      id: 'actor-def',
+      uuid: VICTIM_UUID,
+      name: 'Victime',
+    });
+    const token = makeToken(actor, { id: 'token-def' });
+    const message = makeKnightMessage({
+      content: '<div class="knight-roll"><div>Dégâts</div><div>Débordement</div><div>pas de nombre ici</div></div>',
+      weaponRaw: [],
+      targets: [],
+    });
+    const damage = new DamageKnight(token, message, 1, false);
+    expect(damage.damage).toBe(0);
+
+    await damage.calculate();
+    expect(damage.damageRepartition).toEqual({});
+    expect(actor.updates).toHaveLength(0);
+
+    damage.apply();
+    expect(actor.updates).toEqual([{}, {}]);
+
+    damage.generateRecapMessage();
+    const messages = recordedMessages();
+    expect(messages).toHaveLength(1);
+    expect(messages[0].content).toContain('Récapitulatif des dégâts');
+    for (const line of ['Energie :', 'Armure :', 'Guardian :', 'Santé :', 'Espoir :']) {
+      expect(messages[0].content).not.toContain(line);
+    }
+    expect(messages[0].flags['knight-damage']).toMatchObject({ recap: {}, isRecap: true, origin: ATTACKER_UUID });
+    expect(recordedQueries()).toEqual([]);
   });
 });
