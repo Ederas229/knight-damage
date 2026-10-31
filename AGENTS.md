@@ -1,12 +1,12 @@
 # AGENTS.md
 
-Foundry VTT **module** (`knight-damage`) that adds damage-apply tooling on top of the French *Knight* TTRPG system (`relationships.systems: knight`, Foundry V14 min/verified). Built from the League FoundryVTT Module Template (gulp + rollup). No tests, no TypeScript.
+Foundry VTT **module** (`knight-damage`) that adds damage-apply tooling on top of the French *Knight* TTRPG system (`relationships.systems: knight`, Foundry V14 min/verified). Built from the League FoundryVTT Module Template (gulp + rollup). Vitest unit suite in `tests/unit/`; no TypeScript.
 
 ## Commands
 
 - `npm run build` — clean + rollup bundle + styles + static copy into `dist/`. `npm run build:watch` for watch mode.
 - `npm run lint` (eslint flat config) and `npm run format` (prettier). **Lint runs automatically on pre-commit via husky** and in CI. Unit tests: `npm test` (vitest, ~0.2s, in CI after lint); e2e (foundryvtt-test-framework) is planned/local-only — see `docs/testing-plan.md`. Order: `lint -> test -> build`.
-- Unit tests live in `tests/unit/**/*.test.mjs`; Foundry globals are stubbed in `tests/unit/support/foundry-globals.mjs` (setupFiles), doubles in `doubles.mjs`. The knight-damage classes are the test subjects — source is the oracle; deviations from intent get `// CHARACTERIZATION:` pins (e.g. vehicule/mecha passenger recap has no revert flags, `cuirDuTaureau` is *active* when `system.active.base` is falsy, Débordement fallback skips `Math.ceil`).
+- Unit tests live in `tests/unit/**/*.test.mjs`; Foundry globals are stubbed in `tests/unit/support/foundry-globals.mjs` (setupFiles), doubles in `doubles.mjs`. The knight-damage classes are the test subjects — source is the oracle; author-confirmed intentional oddities are labeled `INTENDED (author)`, unconfirmed oddities stay `CHARACTERIZATION:` pins (see the list in Architecture below for which is which).
 - `npm run link-project` — symlinks `dist/` into Foundry User Data. `foundryconfig.json` is gitignored and per-machine: the local one points at the portable v14 install (`Desktop\Foundry v14`); recreate it in fresh worktrees. Linking needs **admin privileges on Windows** (or Developer Mode). `npm run clean:link` removes the link.
 - Node: `lts/*` per `.nvmrc`; CI uses Node 20.
 
