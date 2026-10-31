@@ -196,6 +196,9 @@ describe('mecha recap messages', () => {
 
     expect(piloteMsg.content).toContain('Dégâts sur le pilote');
     expect(piloteMsg.content).toContain('<div>Santé : 2</div>');
+    // INTENDED (author): like the vehicule passenger message above, the pilote
+    // message is created WITHOUT any knight-damage flags, so it has no revert
+    // affordance of its own — pilote damage is applied and reverted manually.
     expect(piloteMsg.flags).toBeUndefined();
   });
 });

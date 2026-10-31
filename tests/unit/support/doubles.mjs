@@ -114,9 +114,21 @@ export function makeKnightMessage({
 
 // Recorder for the jQuery-like `html` argument of revertDamage: the source
 // calls html.find(sel).css(...), html.find(sel).remove() and
-// html.find('.message-content').html(). Every selector/action is recorded;
-// html() returns the canned messageContent string.
-export function makeHtmlRecorder({ messageContent = '' } = {}) {
+// html.find('.message-content').html(). Every selector/action is recorded.
+//
+// html() returns a DISTINCT canned string PER SELECTOR (defaults below, the
+// caller overrides with `{ html: { '.message-content': '...' } }`), so the
+// content the source writes back into message.update is proven to have been
+// read from .message-content BY VALUE: reading any other selector returns a
+// different, obviously wrong string. Asking a selector that has no canned
+// value throws instead of quietly returning ''.
+export function makeHtmlRecorder({ html = {} } = {}) {
+  const canned = {
+    '.recap': '<div class="recap">CANNED HTML FOR .recap</div>',
+    '.revert-damage': '<button class="revert-damage">CANNED HTML FOR .revert-damage</button>',
+    '.message-content': '<div class="message-content">CANNED HTML FOR .message-content</div>',
+    ...html,
+  };
   const calls = [];
   const chainFor = (selector) => ({
     css(property, value) {
@@ -129,7 +141,10 @@ export function makeHtmlRecorder({ messageContent = '' } = {}) {
     },
     html() {
       calls.push({ selector, action: 'html' });
-      return messageContent;
+      if (!(selector in canned)) {
+        throw new Error(`makeHtmlRecorder: no canned html() value for selector "${selector}"`);
+      }
+      return canned[selector];
     },
   });
   return {

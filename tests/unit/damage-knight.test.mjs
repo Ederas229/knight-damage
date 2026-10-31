@@ -7,6 +7,7 @@ import {
   resetRecorders,
   recordedQueries,
   recordedDialogPrompts,
+  setDialogPrompt,
   setDialogPromptCallback,
   resetDialogPrompt,
 } from './support/foundry-globals.mjs';
@@ -74,6 +75,34 @@ function knightFixture({
   });
   const damage = new DamageKnight(token, message, mult, targetStat);
   return { damage, actor, token, message };
+}
+
+// armure 0 victims: isArmorIgnored() is trivially true (0 <= perceArmure with
+// the default raw carrying NO percearmure entry, so perceArmure stays 0), hence
+// the armure track is skipped (repartition.armure stays 0) and the post-CdF
+// damage reaches the guardian gate directly.
+function zeroArmureFixture({
+  system,
+  statuses = [],
+  weaponRaw = ['penetrant 6'],
+  content = '',
+  targetValue = 60,
+} = {}) {
+  registerUuid('Actor.actor-atk', makeActor('pnj', {}, { id: 'actor-atk' }));
+  registerUuid(ATTACKER_UUID, { uuid: ATTACKER_UUID });
+  const actor = makeActor('knight', system, {
+    id: 'actor-def',
+    uuid: VICTIM_UUID,
+    name: 'Victime',
+    temporaryEffects: statuses.map((status) => ({ statuses: new Set([status]) })),
+  });
+  const token = makeToken(actor, { id: 'token-def' });
+  const message = makeKnightMessage({
+    content: `<div class="knight-roll"><div>Dégâts</div>${content}</div>`,
+    weaponRaw,
+    targets: [{ id: 'token-def', value: targetValue }],
+  });
+  return { damage: new DamageKnight(token, message, 1, false), actor };
 }
 
 beforeEach(() => {
@@ -165,6 +194,53 @@ describe('destructeur', () => {
   });
 });
 
+describe('destructeur gate (damageKnight.js:151-154: bonus only when the armure track runs)', () => {
+  // Negative controls for the two scenarios where the armure track is skipped.
+  // The trait is parsed (bool + result) but the gate
+  // `effectiveStats.armure > 0 && (!isArmorIgnored() || cuirDuTaureau)` blocks
+  // applyDamageTrait('destructeur'). Every repartition number below equals the
+  // unlabeled twin; the discriminating number is the stranded damage, 36 as
+  // pinned vs the 48 (56 + 12 - 20 sante) an unguarded +12 would leave.
+  // NB: the worn-armor case is the discriminating one (only the isArmorIgnored
+  // clause blocks there); in the armure-0 case BOTH clauses block independently,
+  // so that fixture only breaks if the whole gate is removed — it is kept as the
+  // documentation twin of the folde scenario.
+
+  it('worn armure 30 vs perce-armure 40 (bypassed) + Destructeur +12: gate blocks the bonus — {armure:0, sante:20}, armure 30 and armureGuardian 15 untouched, stranded 36 (48 unguarded)', async () => {
+    const { damage } = knightFixture({
+      system: knightSystem({ armure: 30 }),
+      weaponRaw: [...STANDARD_RAW, 'destructeur'],
+      content: traitSpan('Destructeur', 12),
+    });
+    expect(damage.damageTraits.destructeur).toEqual({ bool: true, result: 12 });
+    // Checked BEFORE calculate: isArmorIgnored() re-reads actorStats, and the
+    // bypass holds here anyway (armure is never touched on this path).
+    expect(damage.isArmorIgnored()).toBe(true);
+    await damage.calculate();
+    expect(damage.damageRepartition).toEqual({ armure: 0, sante: 20 });
+    expect(damage.actorStats.armure).toBe(30);
+    expect(damage.actorStats.armureGuardian).toBe(15);
+    expect(damage.actorStats.sante).toBe(0);
+    expect(damage.damage).toBe(36);
+  });
+
+  it('armure 0 + status folde + Destructeur +12: gate blocks the bonus twice over (effectiveStats.armure 0 AND the trivial 0<=0 bypass) — {armure:0, sante:20}, armureGuardian 15 untouched, stranded 36 (48 unguarded)', async () => {
+    const { damage } = zeroArmureFixture({
+      system: knightSystem({ armure: 0, cdf: 10, guardianArmure: 15 }),
+      statuses: ['folde'],
+      weaponRaw: ['penetrant 6', 'destructeur'],
+      content: traitSpan('Destructeur', 12),
+    });
+    expect(damage.damageTraits.destructeur).toEqual({ bool: true, result: 12 });
+    await damage.calculate();
+    expect(damage.damageRepartition).toEqual({ armure: 0, sante: 20 });
+    expect(damage.actorStats.armure).toBe(0);
+    expect(damage.actorStats.armureGuardian).toBe(15);
+    expect(damage.actorStats.sante).toBe(0);
+    expect(damage.damage).toBe(36);
+  });
+});
+
 describe('armor bypass (worn armor <= perce-armure)', () => {
   it('worn armure 30 vs perce-armure 40: armure track skipped, damage goes straight to sante math', async () => {
     const { damage } = knightFixture({ system: knightSystem({ armure: 30 }) });
@@ -216,6 +292,78 @@ describe('armor bypass (worn armor <= perce-armure)', () => {
     expect(damage.actorStats.armureGuardian).toBe(0);
     expect(damage.actorStats.sante).toBe(0);
     expect(damage.damageRepartition).toEqual({ armure: 30, armureGuardian: 15, sante: 20 });
+  });
+});
+
+describe('instinct-du-loup ignorearmure / ignorecdf flags (damageKnight.js:54-59)', () => {
+  // INTENDED (author): the item is ACTIVE when system.active.base is FALSY
+  // (same inverted guard as Cuir du taureau). applyInstinctDuLoup() is the
+  // first thing calculate() does, so the neutralisation lands before any
+  // CdF/armure math. armure 60 is chosen ABOVE perceArmure 40 so the two
+  // bypass clauses (flag vs value) are independent and the flag side is the
+  // only one the loup can switch off.
+  function loupItem(flags) {
+    return makeItem('Instinct du loup', {
+      system: { active: { base: false } },
+      flags: { 'knight-damage': { loup: flags } },
+    });
+  }
+
+  it("CONTROL — raw 'ignorearmure' vs armure 60 (> perce-armure 40): the flag alone forces the bypass — armure track skipped, {armure:0, sante:20}, armure 60 untouched, sante 0, stranded 36", async () => {
+    const { damage } = knightFixture({
+      system: knightSystem({ armure: 60 }),
+      weaponRaw: [...STANDARD_RAW, 'ignorearmure'],
+    });
+    expect(damage.ignoreArmure).toBe(true);
+    expect(damage.isArmorIgnored()).toBe(true);
+    await damage.calculate();
+    expect(damage.damageRepartition).toEqual({ armure: 0, sante: 20 });
+    expect(damage.actorStats.armure).toBe(60);
+    expect(damage.actorStats.sante).toBe(0);
+    expect(damage.damage).toBe(36);
+  });
+
+  it("flag ignorearmure:'active' + raw 'ignorearmure' vs armure 60: bypass neutralised AND 60 > perce-armure 40 keeps the value clause false — armure track RUNS, absorbs 56 (armure 4), carry trunc(56/5)=11 (sante 9), {armure:56, sante:11}, nothing stranded", async () => {
+    const { damage } = knightFixture({
+      system: knightSystem({ armure: 60 }),
+      weaponRaw: [...STANDARD_RAW, 'ignorearmure'],
+      actorItems: [loupItem({ ignorearmure: 'active' })],
+    });
+    await damage.calculate();
+    // The flag was flipped off; perceArmure stays 40 (no 'percearmure' key).
+    expect(damage.ignoreArmure).toBe(false);
+    expect(damage.perceArmure).toBe(40);
+    expect(damage.damageRepartition).toEqual({ armure: 56, sante: 11 });
+    expect(damage.actorStats.armure).toBe(4);
+    expect(damage.actorStats.sante).toBe(9);
+    expect(damage.damage).toBe(0);
+    // NB: isArmorIgnored() is re-read live, so after the soak (armure 4) it
+    // reads 4 <= 40 = true again; what matters is that the track RAN.
+  });
+
+  it("CONTROL — raw 'ignorechampdeforce' vs CdF 10: applyTraitCdf zeroes the CdF WITHOUT the penetrant subtraction — full 60 hits the armor (armure 40), carry trunc(60/5)=12 (sante 8), {armure:60, sante:12}", async () => {
+    const { damage } = knightFixture({
+      weaponRaw: [...STANDARD_RAW, 'ignorechampdeforce'],
+    });
+    expect(damage.ignoreCdf).toBe(true);
+    await damage.calculate();
+    expect(damage.effectiveStats.cdf).toBe(0);
+    expect(damage.damageRepartition).toEqual({ armure: 60, sante: 12 });
+    expect(damage.actorStats.armure).toBe(40);
+    expect(damage.actorStats.sante).toBe(8);
+  });
+
+  it("flag ignorecdf:'active' + raw 'ignorechampdeforce': bypass neutralised, so penetrant 6 vs CdF 10 leaves effective CdF 4 that soaks 4 — damage 56 (armure 44), carry trunc(56/5)=11 (sante 9), {armure:56, sante:11}", async () => {
+    const { damage } = knightFixture({
+      weaponRaw: [...STANDARD_RAW, 'ignorechampdeforce'],
+      actorItems: [loupItem({ ignorecdf: 'active' })],
+    });
+    await damage.calculate();
+    expect(damage.ignoreCdf).toBe(false);
+    expect(damage.effectiveStats.cdf).toBe(4);
+    expect(damage.damageRepartition).toEqual({ armure: 56, sante: 11 });
+    expect(damage.actorStats.armure).toBe(44);
+    expect(damage.actorStats.sante).toBe(9);
   });
 });
 
@@ -378,9 +526,19 @@ describe('Rire du corbeau (energie split via the real DialogV2 ok.callback)', ()
   // NOTE (source-oracle correction): unlike cuir-du-taureau / instinct-du-loup,
   // the corbeau guard is the plain truthy check `if (corbeau?.system?.active?.base)`
   // (damageKnight.js:109) — the item is ACTIVE when system.active.base is TRUTHY.
-  function corbeauFixture({ activeBase = true, valueAsNumber }) {
-    setDialogPromptCallback(valueAsNumber);
+  // Pass no valueAsNumber to program the dialog yourself (setDialogPrompt).
+  function corbeauFixture({
+    activeBase = true,
+    valueAsNumber,
+    system,
+    targetValue = 60,
+    weaponRaw = STANDARD_RAW,
+  } = {}) {
+    if (valueAsNumber !== undefined) setDialogPromptCallback(valueAsNumber);
     return knightFixture({
+      system,
+      targetValue,
+      weaponRaw,
       actorItems: [makeItem('Rire du corbeau', { system: { active: { base: activeBase } } })],
     });
   }
@@ -397,7 +555,72 @@ describe('Rire du corbeau (energie split via the real DialogV2 ok.callback)', ()
     expect(recordedQueries()).toEqual([]);
   });
 
-  it('value 40 > trunc(56/2): clamped to 28, but energie 12 caps the absorb — energie 0, armure 44 (56 left), carry trunc(44/5)=8 (repartition {energie:12, armure:44, sante:8})', async () => {
+  // damageKnight.js:282: `if (!Number.isFinite(value)) return 0;` sits BEFORE the
+  // `value <= 0` check. Without it, NaN fails all three guards (NaN <= 0 and
+  // NaN >= 28 are both false) and returns NaN, which poisons every later number
+  // (energie, armure and sante would all end up NaN, repartition too).
+  it('valueAsNumber NaN (empty/non-numeric input): the finite guard returns 0 BEFORE the <=0 check — plain worked example continues, energie 12 untouched ({energie:0, armure:56, sante:11})', async () => {
+    const { damage } = corbeauFixture({ valueAsNumber: Number.NaN });
+    await damage.calculate();
+    // The energie key is still PRESENT with 0: damageKnight.js:113 initialises
+    // damageRepartition.energie before calculateDamageStat('energie') adds 0.
+    expect(damage.damageRepartition).toEqual({ energie: 0, armure: 56, sante: 11 });
+    expect(damage.actorStats.energie).toBe(12);
+    expect(damage.actorStats.armure).toBe(44);
+    expect(damage.actorStats.sante).toBe(9);
+    expect(damage.damage).toBe(0);
+    expect(recordedQueries()).toEqual([]);
+  });
+
+  // askDamageEnergie wraps the WHOLE prompt call in try/catch (damageKnight.js:
+  // 272-291), so a rejected prompt leaves the initial `damageEnergie = 0`.
+  it('prompt REJECTS (rejectClose semantics, async): try/catch keeps damageEnergie 0 and the plain path continues — one prompt recorded, no retry', async () => {
+    setDialogPrompt(async () => {
+      throw new Error('prompt rejected');
+    });
+    const { damage } = corbeauFixture();
+    await damage.calculate();
+    expect(recordedDialogPrompts()).toHaveLength(1);
+    expect(damage.damageRepartition).toEqual({ energie: 0, armure: 56, sante: 11 });
+    expect(damage.actorStats.energie).toBe(12);
+    expect(damage.actorStats.armure).toBe(44);
+    expect(damage.actorStats.sante).toBe(9);
+    expect(damage.damage).toBe(0);
+  });
+
+  it('prompt throws SYNCHRONOUSLY inside DialogV2.prompt: the same try/catch rescue — plain path, still exactly one prompt recorded', async () => {
+    setDialogPrompt(() => {
+      throw new Error('prompt threw synchronously');
+    });
+    const { damage } = corbeauFixture();
+    await damage.calculate();
+    expect(recordedDialogPrompts()).toHaveLength(1);
+    expect(damage.damageRepartition).toEqual({ energie: 0, armure: 56, sante: 11 });
+    expect(damage.actorStats.energie).toBe(12);
+  });
+
+  // Load-bearing clamp (damageKnight.js:284): energie 40 absorbs the whole
+  // requested split, so the only thing stopping the extra units is the clamp.
+  // CdF 0 is zeroed by penetrant 6, so the corbeau point sees the FULL damage 20
+  // and the half-split bound is trunc(20/2) = 10: requested 15 comes back 10.
+  it('clamp is load-bearing: value 15 >= trunc(20/2) is clamped to 10 — {energie:10, armure:10, sante:2} (energie 30, armure 90, sante 18); without the clamp it would be 15/5/1', async () => {
+    const { damage } = corbeauFixture({
+      system: knightSystem({ cdf: 0, energie: 40 }),
+      targetValue: 20,
+      valueAsNumber: 15,
+    });
+    await damage.calculate();
+    const [prompt] = recordedDialogPrompts();
+    expect(prompt.window.title).toBe('Rire du corbeau');
+    expect(prompt.content).toContain('value="10"'); // default input = trunc(20/2)
+    expect(damage.damageRepartition).toEqual({ energie: 10, armure: 10, sante: 2 });
+    expect(damage.actorStats.energie).toBe(30);
+    expect(damage.actorStats.armure).toBe(90);
+    expect(damage.actorStats.sante).toBe(18);
+    expect(damage.damage).toBe(0);
+  });
+
+  it('value 40 with energie 12: the clamp bound is NOT observable in this fixture (energie caps the absorb at 12 whether or not the value is clamped to 28) — {energie:12, armure:44, sante:8}; only the prompt default pins the bound (value="28")', async () => {
     const { damage } = corbeauFixture({ valueAsNumber: 40 });
     await damage.calculate();
     expect(damage.damageRepartition).toEqual({ energie: 12, armure: 44, sante: 8 });
@@ -408,6 +631,8 @@ describe('Rire du corbeau (energie split via the real DialogV2 ok.callback)', ()
     const [prompt] = recordedDialogPrompts();
     expect(prompt.window.title).toBe('Rire du corbeau');
     expect(prompt.content).toContain('value="28"');
+    // The clamp's EFFECT on the numbers is pinned by the "clamp is
+    // load-bearing" fixture above (energie 40, so nothing else caps the absorb).
   });
 
   it('value 10 (mid): exact split — energie takes 10 (energie 2 left), remainder 46 continues armure + carry trunc(46/5)=9 (repartition {energie:10, armure:46, sante:9})', async () => {
@@ -429,25 +654,9 @@ describe('Rire du corbeau (energie split via the real DialogV2 ok.callback)', ()
 });
 
 describe('guardian branch gates (damageKnight.js:162-174)', () => {
-  // armure 0 victims: isArmorIgnored() is trivially true (0 <= perceArmure),
-  // so the armure track is skipped (repartition.armure stays 0) and the
-  // post-CdF damage reaches the guardian gate directly.
-  function zeroArmureFixture({ system, statuses = [], weaponRaw = ['penetrant 6'], targetValue = 60 } = {}) {
-    registerUuid('Actor.actor-atk', makeActor('pnj', {}, { id: 'actor-atk' }));
-    registerUuid(ATTACKER_UUID, { uuid: ATTACKER_UUID });
-    const actor = makeActor('knight', system, {
-      id: 'actor-def',
-      uuid: VICTIM_UUID,
-      name: 'Victime',
-      temporaryEffects: statuses.map((status) => ({ statuses: new Set([status]) })),
-    });
-    const token = makeToken(actor, { id: 'token-def' });
-    const message = makeKnightMessage({
-      weaponRaw,
-      targets: [{ id: 'token-def', value: targetValue }],
-    });
-    return { damage: new DamageKnight(token, message, 1, false), actor };
-  }
+  // Fixtures use the module-scope zeroArmureFixture (armure 0 => trivial
+  // isArmorIgnored bypass, so the armure track stays skipped and damage reaches
+  // the guardian gate directly).
 
   it("status 'folde': guardian gear is NOT soaked (gate short-circuits) — armureGuardian 15 untouched, 56 goes straight to sante and the 36 overflow is silently dropped", async () => {
     // INTENDED (author) consequence: armure 0 <= 0 makes isArmorIgnored()
@@ -492,10 +701,12 @@ describe('guardian branch gates (damageKnight.js:162-174)', () => {
     expect(damage.damage).toBe(0);
   });
 
-  it('apply-guardian-cdf zeroing sub-case: penetrant 6 >= cdfGuardian 4 zeroes the guardian CdF (no soak) — the 10 CdF units reach armureGuardian/sante (repartition.sante 14, sante 6)', async () => {
-    // Same as above but cdfGuardian 4 <= penetrant 6 -> effectiveStats.cdfGuardian
-    // 0 -> damage stays 26 -> guardian armor 15 absorbs (11 left)
-    // -> carry trunc(15/5)=3 + 11 -> sante repartition 14.
+  it('apply-guardian-cdf zeroing sub-case: penetrant 6 >= cdfGuardian 4 zeroes the 4-unit guardian CdF, so the 4 units it would have soaked pass the (identical) 15-point armureGuardian soak and land in sante — repartition.sante 14 vs the 4 of the un-zeroed twin, sante 6 vs 16', async () => {
+    // cdfGuardian 4 <= penetrant 6 -> effectiveStats.cdfGuardian 0 -> damage
+    // stays 26 -> armureGuardian 15 absorbs (11 left) -> carry trunc(15/5)=3
+    // -> sante repartition 3 + 11 = 14 (vs 3 + 1 = 4 in the cdfGuardian-10 twin
+    // above; the 10-unit gap is exactly the 11-1 difference in what reaches
+    // sante after the same 15-point armor soak).
     const { damage } = zeroArmureFixture({
       system: knightSystem({ armure: 0, cdf: 10, guardianArmure: 15, guardianCdf: 4 }),
       statuses: ['apply-guardian-cdf'],
@@ -505,6 +716,24 @@ describe('guardian branch gates (damageKnight.js:162-174)', () => {
     expect(damage.effectiveStats.cdfGuardian).toBe(0);
     expect(damage.actorStats.sante).toBe(6);
     expect(damage.damageRepartition).toEqual({ armure: 0, armureGuardian: 15, sante: 14 });
+  });
+
+  // Negative control for the STATUS GATE itself (damageKnight.js:168): the same
+  // fixture without the status never calls applyGuardianCdf, so the 10-point
+  // guardian CdF is neither applied nor zeroed — effectiveStats.cdfGuardian
+  // stays 10 but is simply unused.
+  it("WITHOUT the 'apply-guardian-cdf' status (same cdfGuardian 10 fixture): no CdF step at all — effectiveStats.cdfGuardian untouched at 10, damage 26 -> armureGuardian absorbs 15 (11 left) -> carry trunc(15/5)=3, repartition {armure:0, armureGuardian:15, sante:14}", async () => {
+    const { damage } = zeroArmureFixture({
+      system: knightSystem({ armure: 0, cdf: 10, guardianArmure: 15, guardianCdf: 10 }),
+      targetValue: 30,
+    });
+    await damage.calculate();
+    expect(damage.effectiveStats.cdfGuardian).toBe(10);
+    expect(damage.actorStats.cdfGuardian).toBe(10);
+    expect(damage.actorStats.armureGuardian).toBe(0);
+    expect(damage.actorStats.sante).toBe(6);
+    expect(damage.damageRepartition).toEqual({ armure: 0, armureGuardian: 15, sante: 14 });
+    expect(damage.damage).toBe(0);
   });
 
   it('boundary: damage exactly 0 when it reaches the gate — the strict damage > 0 check skips the guardian entirely (no armureGuardian key in the repartition)', async () => {

@@ -24,6 +24,7 @@ foundryconfig.json
 
 # Distribution files
 dist
+.vitest
 
 # ESLint
 .eslintcache

@@ -5,7 +5,9 @@ import {
   registerUuid,
   clearUuidRegistry,
   resetRecorders,
+  recordedDialogPrompts,
   setDialogPrompt,
+  setDialogPromptCallback,
   resetDialogPrompt,
 } from './support/foundry-globals.mjs';
 
@@ -275,6 +277,14 @@ describe('isArmorIgnored', () => {
     damage.actorStats.armure = 100;
     expect(damage.isArmorIgnored()).toBe(true);
   });
+
+  it('boundary pair pinning the `<=`: armure 40 exactly EQUAL to perce-armure 40 IS a bypass, 41 is not', () => {
+    const { damage } = baseFixture({ weaponRaw: ['percearmure 40'] });
+    damage.actorStats.armure = 40;
+    expect(damage.isArmorIgnored()).toBe(true);
+    damage.actorStats.armure = 41;
+    expect(damage.isArmorIgnored()).toBe(false);
+  });
 });
 
 describe('calculateDamageStat', () => {
@@ -395,6 +405,28 @@ describe('askModifier (DialogV2 stub)', () => {
     expect(damage.damage).toBe(60);
     await damage.askModifier();
     expect(damage.damage).toBe(67);
+  });
+
+  // The two callback-path cases below route a fake form button through the REAL
+  // options.ok.callback (see setDialogPromptCallback), so they pin the
+  // production input validation of damageBase.js:87 rather than a programmed
+  // return value.
+  it('callback path, valueAsNumber NaN (empty/invalid number input): the finite guard returns {damage:0} — base damage stays 60 (it would become NaN without the guard)', async () => {
+    setDialogPromptCallback(Number.NaN);
+    const { damage } = baseFixture();
+    await damage.askModifier();
+    expect(damage.damage).toBe(60);
+    const [prompt] = recordedDialogPrompts();
+    expect(prompt.window.title).toBe('Damage modifier');
+    expect(prompt.content).toContain('name="value" type="number"');
+  });
+
+  it('callback path, finite valueAsNumber -5: the real callback reads -5 off the form and returns {damage:-5} — 60 - 5 = 55 (proves the value routing, not a programmed result)', async () => {
+    setDialogPromptCallback(-5);
+    const { damage } = baseFixture();
+    await damage.askModifier();
+    expect(damage.damage).toBe(55);
+    expect(recordedDialogPrompts()).toHaveLength(1);
   });
 });
 

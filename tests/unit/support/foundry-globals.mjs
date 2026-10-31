@@ -110,25 +110,40 @@ export function recordedDialogPrompts() {
   return [...dialogPrompts];
 }
 
+// Also folds in resetDialogPrompt() so a stray programmed stub can never leak
+// into the next test (the existing afterEach(resetDialogPrompt) calls in the test
+// files stay harmless and idempotent).
 export function resetRecorders() {
   messageCreations.length = 0;
   queryCalls.length = 0;
   dialogPrompts.length = 0;
+  resetDialogPrompt();
 }
 
 export function setDialogPrompt(handler) {
   dialogPromptImpl = handler;
 }
 
-// Runs the REAL options.ok.callback(event, button) with a fake form button
-// (button.form.elements.value.valueAsNumber = valueAsNumber), so tests
-// exercise the production clamp/validation logic instead of programming a
-// result. The prompt promise resolves with whatever the callback returns.
+// Instead of programming a result, this runs the REAL options.ok.callback(event,
+// button) with a fake form button (button.form.elements.value.valueAsNumber =
+// valueAsNumber), so tests go through the production validation/clamp code of
+// askModifier and askDamageEnergie. The prompt promise resolves with whatever
+// that callback returns. Which pins actually depend on it (source-oracle):
+//   - damage-knight.test.mjs "clamp is load-bearing": requested 15 >= the
+//     trunc(20/2) = 10 bound comes back CLAMPED to 10, and the energie/armure/
+//     sante repartition proves the clamp changed the numbers (15/5/1 unclamped);
+//   - damage-knight.test.mjs + damage-base.test.mjs NaN cases: a non-finite
+//     valueAsNumber comes back as the guard's 0 (resp. { damage: 0 });
+//   - damage-base.test.mjs finite -5: the -5 really is read off valueAsNumber.
+// The bound itself (the dialog's default input value) is pinned separately via
+// recordedDialogPrompts() content.
 export function setDialogPromptCallback(valueAsNumber) {
   dialogPromptImpl = async (options) =>
     options.ok.callback({ type: 'click' }, { form: { elements: { value: { valueAsNumber } } } });
 }
 
+// Restores the default "no stub programmed" impl. Already covered by
+// resetRecorders(); kept exported for explicit use inside a test.
 export function resetDialogPrompt() {
   dialogPromptImpl = async () => {
     throw new Error('foundry.applications.api.DialogV2.prompt called without a programmed stub');

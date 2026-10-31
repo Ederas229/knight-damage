@@ -9,7 +9,20 @@ import { registerUuid, clearUuidRegistry, resetRecorders, recordedQueries } from
 
 const ATTACKER_UUID = 'Scene.scene-1.Token.token-atk';
 const VICTIM_UUID = 'Scene.scene-1.Token.token-def.Actor.actor-def';
-const REVERTED_CONTENT = '<div class="message-content">contenu reverti</div>';
+// Distinct canned html() per selector: the string below is only reachable
+// through html.find('.message-content').html(), so the message.update content
+// assertion proves the provenance by value. The two decoys are what the source
+// would have written if it ever read the content from another selector.
+const REVERTED_CONTENT = '<div class="message-content">contenu relu sur .message-content</div>';
+const CANNED_HTML = {
+  '.recap': '<div class="recap">DECOY contenu lu sur .recap</div>',
+  '.revert-damage': '<button class="revert-damage">DECOY contenu lu sur .revert-damage</button>',
+  '.message-content': REVERTED_CONTENT,
+};
+
+function makeRevertHtmlRecorder() {
+  return makeHtmlRecorder({ html: CANNED_HTML });
+}
 
 function registerAttacker() {
   registerUuid('Actor.actor-atk', makeActor('pnj', {}, { id: 'actor-atk' }));
@@ -43,13 +56,16 @@ function knightSystem({
   };
 }
 
-// A recap message double carrying the flags revertDamage reads.
+// A recap message double carrying the flags revertDamage reads. isRecap: true
+// mirrors what generateRecapMessage writes (damageBase.js:337) — production
+// fidelity: the constructor then short-circuits the trait/perce parsing (the
+// revert path reads none of it, so every number below is unchanged).
 function makeRecapMessage({ recap, wear = 'normal', anatheme = false }) {
   const message = makeKnightMessage({
     weaponRaw: ['percearmure 40', 'penetrant 6'],
     targets: [{ id: 'token-def', value: 60 }],
   });
-  message.flags['knight-damage'] = { recap, origin: ATTACKER_UUID, wear, anatheme };
+  message.flags['knight-damage'] = { recap, isRecap: true, origin: ATTACKER_UUID, wear, anatheme };
   return message;
 }
 
@@ -72,10 +88,34 @@ describe('DamageBase.revertDamage — synchronous, no timers', () => {
     // Victim already damaged: this is the post-calculate() state of the
     // standard worked example (armure 100-56=44, sante 20-11=9).
     damage.actorStats = actorStats;
-    return { damage, actor, message, html: makeHtmlRecorder({ messageContent: REVERTED_CONTENT }) };
+    return { damage, actor, message, html: makeRevertHtmlRecorder() };
   }
 
-  it('applies the recap back onto actorStats (44+56=100, 9+11=20), stamps the html markers, rewrites the message content, and writes the restored values through the double apply()', () => {
+  it('the recap double carries isRecap:true like the real recap, so the constructor short-circuits trait/perce parsing (weapon raw percearmure 40 / penetrant 6 stays unparsed, all damage traits off)', () => {
+    // No attacker registered on purpose: if setBooleanTraits ran, its
+    // anti-anatheme fallback would resolve fromUuidSync('Actor.actor-atk') to
+    // undefined and hasStatusEffect(undefined, ...) would throw.
+    const token = makeToken(makeActor('knight', {}, { id: 'actor-def', uuid: VICTIM_UUID }), { id: 'token-def' });
+    const message = makeRecapMessage({ recap: { armure: 56, sante: 11 } });
+    const damage = new DamageBase(token, message, 1, false);
+
+    expect(message.flags['knight-damage'].isRecap).toBe(true);
+    // the knight target entry is still parsed (the damage extraction has no
+    // isRecap short-circuit):
+    expect(damage.damage).toBe(60);
+    expect(damage.perceArmure).toBe(0);
+    expect(damage.penetrant).toBe(0);
+    expect(damage.ignoreArmure).toBe(false);
+    expect(damage.ignoreCdf).toBe(false);
+    expect(damage.damageTraits).toEqual({
+      destructeur: { bool: false, result: 0 },
+      meurtrier: { bool: false, result: 0 },
+      ultraviolence: { bool: false, result: 0 },
+      fureur: { bool: false, result: 0 },
+    });
+  });
+
+  it('applies the recap back onto actorStats (44+56=100, 9+11=20), stamps the html markers, rewrites the message content with the value canned for the .message-content selector only, and writes the restored values through the double apply()', () => {
     const { damage, actor, message, html } = baseRevertFixture({
       recap: { armure: 56, sante: 11 },
       actorStats: { armure: 44, sante: 9 },
@@ -94,8 +134,10 @@ describe('DamageBase.revertDamage — synchronous, no timers', () => {
     expect(html.calls).toContainEqual({ selector: '.revert-damage', action: 'remove' });
     expect(html.calls).toContainEqual({ selector: '.message-content', action: 'html' });
 
-    // message.update recorder got the html() string.
+    // message.update recorder got the html() string of .message-content — and
+    // NOT the decoy returned by any other selector.
     expect(message.updates).toEqual([{ content: REVERTED_CONTENT }]);
+    expect(message.updates[0].content).not.toContain('DECOY');
 
     // recap becomes the repartition and the reverted stats are written per
     // apply()'s mapping. INTENDED (author): apply() always double-updates
@@ -157,7 +199,7 @@ describe('DamageKnight.revertDamage — setActorStats at setTimeout(100), apply 
     // stays out of unit scope.
     const message = makeRecapMessage({ recap: { armure: 56, sante: 11, espoir: 3 } });
     const damage = new DamageKnight(token, message, 1, false);
-    const html = makeHtmlRecorder({ messageContent: REVERTED_CONTENT });
+    const html = makeRevertHtmlRecorder();
 
     const reverted = damage.revertDamage(message, html);
 
