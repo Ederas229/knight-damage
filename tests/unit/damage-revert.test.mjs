@@ -4,11 +4,19 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { DamageBase } from '../../src/module/damageBase.js';
 import { DamageKnight } from '../../src/module/damageKnight.js';
-import { makeActor, makeKnightMessage, makeToken, makeHtmlRecorder } from './support/doubles.mjs';
-import { registerUuid, clearUuidRegistry, resetRecorders, recordedQueries } from './support/foundry-globals.mjs';
+import { DamageVehicule } from '../../src/module/damageVehicule.js';
+import { makeActor, makeKnightMessage, makeMessage, makeToken, makeHtmlRecorder } from './support/doubles.mjs';
+import {
+  registerUuid,
+  clearUuidRegistry,
+  resetRecorders,
+  recordedQueries,
+  recordedMessages,
+} from './support/foundry-globals.mjs';
 
 const ATTACKER_UUID = 'Scene.scene-1.Token.token-atk';
 const VICTIM_UUID = 'Scene.scene-1.Token.token-def.Actor.actor-def';
+const VEHICULE_UUID = 'Scene.scene-1.Token.token-def.Actor.actor-veh';
 // Distinct canned html() per selector: the string below is only reachable
 // through html.find('.message-content').html(), so the message.update content
 // assertion proves the provenance by value. The two decoys are what the source
@@ -245,5 +253,94 @@ describe('DamageKnight.revertDamage — setActorStats at setTimeout(100), apply 
       espoir: 18,
       energie: 12,
     });
+  });
+});
+
+describe('DamageVehicule inherits DamageBase.revertDamage — the vehicule armure recap IS revertible', () => {
+  // REACHABLE in production: unlike the flagless passenger/pilote side messages
+  // (INTENDED author consequence pinned in recap-message.test.mjs), the vehicule
+  // armure recap comes from DamageVehicule.generateRecapMessage -> the base
+  // template, so it carries BOTH the .revert-damage button and the
+  // flags['knight-damage'] = {recap, isRecap, origin} the revert click needs
+  // (addRevertDamageEvent binds every .revert-damage, knight-damage.js:290-292;
+  // handleClickRevertDamage then rebuilds the damage object by ACTOR type,
+  // knight-damage.js:300 -> DamageVehicule, which inherits the base revert).
+  // The fixture therefore runs the REAL pipeline first (calculate +
+  // generateRecapMessage on a 130-damage hit: /10 colosse -> 13 - 3 CdF = 10
+  // absorbed by the 30 armure -> stored repartition {armure: 10, passenger: trunc(10/5)=2})
+  // and reverts that exact recap message against the already-damaged actor.
+  function vehiculeRevertFixture() {
+    registerAttacker();
+    const healthyActor = makeActor(
+      'vehicule',
+      { armure: { value: 30 }, champDeForce: { value: 3 }, energie: { value: 12 } },
+      { id: 'actor-veh', uuid: VEHICULE_UUID },
+    );
+    const attack = new DamageVehicule(
+      makeToken(healthyActor, { id: 'token-def' }),
+      makeKnightMessage({ targets: [{ id: 'token-def', value: 130 }] }),
+      1,
+      false,
+    );
+    attack.calculate();
+    attack.generateRecapMessage();
+    const [armureRecapData] = recordedMessages(); // [0] is the armure recap; the passenger message is the flagless second one
+
+    // The recap message exactly as ChatMessage.create received it: knight-damage
+    // flags ONLY (no flags.knight), which the base constructor tolerates
+    // (message.flags?.knight?.targets?.find short-circuits, damage stays 0).
+    const recapMessage = makeMessage({
+      content: armureRecapData.content,
+      flags: armureRecapData.flags,
+      speaker: { scene: 'scene-1', token: 'token-def' },
+    });
+
+    // Already-damaged victim (armure 30-10=20): the state of the document when
+    // the GM clicks revert.
+    const actor = makeActor(
+      'vehicule',
+      { armure: { value: 20 }, champDeForce: { value: 3 }, energie: { value: 12 } },
+      { id: 'actor-veh', uuid: VEHICULE_UUID },
+    );
+    const damage = new DamageVehicule(makeToken(actor, { id: 'token-def' }), recapMessage, 1, false);
+    return { damage, actor, message: recapMessage, armureRecapData, html: makeRevertHtmlRecorder() };
+  }
+
+  it('reverts the real apply()-stored recap {armure: 10, passenger: 2}: armure 20+10=30 written (twice, INTENDED double update), the payload has NO passenger key — CHARACTERIZATION: the revert loop leaves actorStats.passenger = undefined + 2 = NaN, confined to memory and never written to the actor', () => {
+    const { damage, actor, message, armureRecapData, html } = vehiculeRevertFixture();
+
+    // Reachability pins: the armure recap carries the revert affordance + flags.
+    expect(armureRecapData.content).toContain('revert-damage');
+    expect(armureRecapData.flags['knight-damage'].recap).toEqual({ armure: 10, passenger: 2 });
+    // No flags.knight targets and no Débordement marker in the recap content:
+    // the constructor extracts no damage at all.
+    expect(damage.damage).toBe(0);
+    // DamageVehicule does NOT override revertDamage: the method the instance
+    // resolves IS DamageBase.prototype.revertDamage (the synchronous base path).
+    expect(DamageVehicule.prototype.revertDamage).toBe(DamageBase.prototype.revertDamage);
+
+    damage.revertDamage(message, html);
+
+    // Same synchronous markers as the knight/base revert: line-through, button
+    // removed, content rewritten from .message-content by value.
+    expect(html.selectorsUsed()).toEqual(['.recap', '.revert-damage', '.message-content']);
+    expect(message.updates).toEqual([{ content: REVERTED_CONTENT }]);
+
+    // apply()'s update mapping (damageBase.js:271-303) has keys armure/blindage/
+    // armureGuardian/sante/cohesion/espoir — but NONE for 'passenger', so the
+    // first payload carries only the restored armure; the second call repeats it
+    // (INTENDED author double-update, no energie in this recap).
+    expect(actor.updates).toEqual([{ 'system.armure.value': 30 }, { 'system.armure.value': 30 }]);
+
+    // CHARACTERIZATION (same convention as the vehicule passenger-NaN pin in
+    // damage-vehicule-mecha.test.mjs): the revert loop `actorStats[key] += value`
+    // iterates the recap INCLUDING 'passenger', and DamageVehicule.setActorStats
+    // never defines it — undefined + 2 = NaN. The actor.updates assertions above
+    // pin that the NaN is confined to actorStats: it never reaches the document.
+    expect(Number.isNaN(damage.actorStats.passenger)).toBe(true);
+    expect(damage.actorStats).toEqual({ armure: 30, cdf: 3, energie: 12, passenger: NaN });
+
+    // No energie entry in the recap -> revertEnergieReminder early-returns.
+    expect(recordedQueries()).toEqual([]);
   });
 });

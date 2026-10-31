@@ -113,6 +113,35 @@ describe('Débordement / Mode Oriflamme content fallback', () => {
     expect(damage.damage).toBe(50);
   });
 
+  // Regex relaxed 2026-10-31 (damageBase.js:53): `>\r?\n\s*\d+\r?\n\s*<`. The
+  // old strict-LF pattern `>\n\s*\d+\n\s*<` never matched CRLF content, and the
+  // pre-fix code then did `number[0]` on null — a TypeError crash in the constructor.
+  it('CRLF content now PARSES (regex relaxed with \\r?): >\\r\\n 43 \\r\\n< x mult 1 = 43 (pre-fix: regex miss then a null[0] TypeError)', () => {
+    const content = '<div>Dégâts</div><div>Débordement</div>\r\n<div>\r\n 43\r\n</div>';
+    registerUuid('Actor.actor-atk', makeActor('pnj', {}, { id: 'actor-atk' }));
+    registerUuid(ATTACKER_UUID, { uuid: ATTACKER_UUID });
+    const token = makeToken(makeActor('knight', {}), { id: 'token-def' });
+    const message = makeKnightMessage({ content, targets: [] });
+    const damage = new DamageBase(token, message, 1, false);
+    expect(damage.damage).toBe(43);
+  });
+
+  // Null guard 2026-10-31 (damageBase.js:54): `if (number)` — a Débordement marker
+  // with no >\r?\n N \r?\n< fragment at all leaves this.damage at its class-field 0.
+  // Pre-fix this construction threw a TypeError (number[0] on null).
+  it('Débordement marker with NO numeric fragment: the null-guard keeps damage at its 0 default — construction succeeds, no TypeError', () => {
+    const content = '<div>Dégâts</div><div>Débordement</div><div>pas de nombre ici</div>';
+    registerUuid('Actor.actor-atk', makeActor('pnj', {}, { id: 'actor-atk' }));
+    registerUuid(ATTACKER_UUID, { uuid: ATTACKER_UUID });
+    const token = makeToken(makeActor('knight', {}), { id: 'token-def' });
+    const message = makeKnightMessage({ content, targets: [] });
+    let damage;
+    expect(() => {
+      damage = new DamageBase(token, message, 1, false);
+    }).not.toThrow();
+    expect(damage.damage).toBe(0);
+  });
+
   it('auto-adds initiator item effects to weapon.effets.raw on the Débordement path', () => {
     const content = '<div>Débordement</div>\n<div>\n 40\n</div>';
     registerUuid('Actor.actor-atk', makeActor('pnj', {}, { id: 'actor-atk' }));
@@ -180,6 +209,15 @@ describe('percearmure / penetrant parsing from weapon.effets.raw', () => {
 
   it('leaves both at 0 when absent', () => {
     const { damage } = baseFixture({ weaponRaw: ['antivehicule'] });
+    expect(damage.perceArmure).toBe(0);
+    expect(damage.penetrant).toBe(0);
+  });
+
+  // Guard applied 2026-10-31 (helpers.js getTraitValue): the keyword matched but
+  // the entry has no trailing number -> 0 instead of NaN. Without the guard both
+  // fields below would be NaN and every downstream CdF/armure subtraction NaN-poisoned.
+  it('malformed raw entries WITHOUT a number ("percearmure" / "penetrant" bare) parse to 0, not NaN', () => {
+    const { damage } = baseFixture({ weaponRaw: ['percearmure', 'penetrant'] });
     expect(damage.perceArmure).toBe(0);
     expect(damage.penetrant).toBe(0);
   });
@@ -284,6 +322,21 @@ describe('isArmorIgnored', () => {
     expect(damage.isArmorIgnored()).toBe(true);
     damage.actorStats.armure = 41;
     expect(damage.isArmorIgnored()).toBe(false);
+  });
+
+  // getTraitValue guard (2026-10-31): a bare 'percearmure' entry parses to 0, so the
+  // value clause stays false for a full-armor victim and the normal soak path runs.
+  // Without the guard perceArmure would be NaN: isArmorIgnored() still reads false
+  // (100 <= NaN is false) but applyTraitArmure's `armure <= NaN` is false too and
+  // `effectiveStats.armure -= NaN` would poison the armor math to NaN.
+  it('malformed bare "percearmure" (no number) parses perceArmure to 0: full armure 100 vs 0 is NOT a bypass (normal soak path)', () => {
+    const { damage } = baseFixture({ weaponRaw: ['percearmure'] });
+    expect(damage.perceArmure).toBe(0);
+    damage.actorStats.armure = 100;
+    expect(damage.isArmorIgnored()).toBe(false);
+    damage.effectiveStats.armure = 100;
+    damage.applyTraitArmure();
+    expect(damage.effectiveStats.armure).toBe(100);
   });
 });
 
@@ -427,6 +480,18 @@ describe('askModifier (DialogV2 stub)', () => {
     await damage.askModifier();
     expect(damage.damage).toBe(55);
     expect(recordedDialogPrompts()).toHaveLength(1);
+  });
+
+  // Same guard as the NaN pin above (damageBase.js:87), now on the +Infinity side:
+  // Number.isFinite(+Infinity) is false -> {damage:0}. Without the guard the prompt
+  // would resolve {damage:Infinity} and `this.damage += mod.damage` would leave
+  // this.damage at Infinity — no later clamp or comparison anywhere in askModifier
+  // can rescue it (unlike askDamageEnergie, there is no clamp here to fall back on).
+  it('callback path, valueAsNumber +Infinity: the finite guard returns {damage:0} — base damage stays 60 (it would become Infinity without the guard)', async () => {
+    setDialogPromptCallback(Number.POSITIVE_INFINITY);
+    const { damage } = baseFixture();
+    await damage.askModifier();
+    expect(damage.damage).toBe(60);
   });
 });
 

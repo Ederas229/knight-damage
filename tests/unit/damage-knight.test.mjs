@@ -192,6 +192,42 @@ describe('destructeur', () => {
     expect(damage.actorStats.sante).toBe(7);
     expect(damage.damageRepartition).toEqual({ armure: 68, sante: 13 });
   });
+
+  // extractTraitValue guard (2026-10-31, helpers.js:29): bool-true trait whose
+  // label span is MISSING from the chat content yields result 0 instead of
+  // undefined. Without the guard applyDamageTrait's `56 + undefined` poisoned
+  // the damage to NaN and every downstream number (armure soak, /5 carry,
+  // sante) went NaN with it. With the guard the standard worked example is
+  // UNCHANGED: 60 -> CdF 4 -> 56 -> armure 100-56=44 -> carry trunc(56/5)=11 -> sante 9.
+  it("raw 'destructeur' but NO Destructeur label span in the content: result parses to the neutral 0 — the standard numbers are unchanged ({armure: 56, sante: 11}); unguarded the +undefined poisoned everything to NaN", async () => {
+    const { damage } = knightFixture({ weaponRaw: [...STANDARD_RAW, 'destructeur'] });
+    expect(damage.damageTraits.destructeur).toEqual({ bool: true, result: 0 });
+    await damage.calculate();
+    expect(damage.actorStats.armure).toBe(44);
+    expect(damage.actorStats.sante).toBe(9);
+    expect(damage.damageRepartition).toEqual({ armure: 56, sante: 11 });
+    expect(damage.damage).toBe(0);
+  });
+});
+
+describe('malformed weapon.effets.raw entries (getTraitValue guard, helpers.js:15-16)', () => {
+  // A bare 'penetrant' keyword (no number) used to parse to NaN: applyTraitCdf's
+  // `actorStats.cdf <= NaN` is false so it took the subtraction branch and
+  // `effectiveStats.cdf = 10 - NaN = NaN` poisoned the ENTIRE chain
+  // (damage 60-NaN=NaN, every armure/sante number NaN). With the guard
+  // penetrant is 0: CdF 10 survives whole, so the worked example is
+  // 60 - 10 = 50 -> armure 100 absorbs 50 (armure 50 left) -> carry trunc(50/5)=10 -> sante 20-10=10.
+  it("bare 'penetrant' (no number) parses to 0 -> effective CdF stays 10, damage 60-10=50 — armure 50 left, carry trunc(50/5)=10 (sante 10), {armure: 50, sante: 10}; unguarded everything was NaN", async () => {
+    const { damage } = knightFixture({ weaponRaw: ['penetrant'] });
+    expect(damage.penetrant).toBe(0);
+    expect(damage.perceArmure).toBe(0);
+    await damage.calculate();
+    expect(damage.effectiveStats.cdf).toBe(10);
+    expect(damage.actorStats.armure).toBe(50);
+    expect(damage.actorStats.sante).toBe(10);
+    expect(damage.damage).toBe(0);
+    expect(damage.damageRepartition).toEqual({ armure: 50, sante: 10 });
+  });
 });
 
 describe('destructeur gate (damageKnight.js:151-154: bonus only when the armure track runs)', () => {
@@ -572,6 +608,25 @@ describe('Rire du corbeau (energie split via the real DialogV2 ok.callback)', ()
     expect(recordedQueries()).toEqual([]);
   });
 
+  // Same finite guard as the NaN pin above (damageKnight.js:282), on the +Infinity side.
+  // Its FIRST-POSITION placement (before `value <= 0` and before the clamp) is what is
+  // load-bearing here: with the guard dropped or demoted after the clamp, +Infinity
+  // would sail past `<= 0` and satisfy `value >= trunc(56/2)=28` (damage at the corbeau
+  // branch is 60-4=56, pinned by the value="28" prompt default below) — returning 28,
+  // which lands on the energie-capped twin: {energie:12, armure:44, sante:8}.
+  it('valueAsNumber +Infinity: the finite guard returns 0 BEFORE the clamp — plain worked example continues ({energie:0, armure:56, sante:11}); a guard demoted after the clamp would clamp to trunc(56/2)=28 and give {energie:12, armure:44, sante:8}', async () => {
+    const { damage } = corbeauFixture({ valueAsNumber: Number.POSITIVE_INFINITY });
+    await damage.calculate();
+    const [prompt] = recordedDialogPrompts();
+    expect(prompt.window.title).toBe('Rire du corbeau');
+    expect(prompt.content).toContain('value="28"'); // pins the corbeau-point damage: trunc(56/2) = 28
+    expect(damage.damageRepartition).toEqual({ energie: 0, armure: 56, sante: 11 });
+    expect(damage.actorStats.energie).toBe(12);
+    expect(damage.actorStats.armure).toBe(44);
+    expect(damage.actorStats.sante).toBe(9);
+    expect(damage.damage).toBe(0);
+  });
+
   // askDamageEnergie wraps the WHOLE prompt call in try/catch (damageKnight.js:
   // 272-291), so a rejected prompt leaves the initial `damageEnergie = 0`.
   it('prompt REJECTS (rejectClose semantics, async): try/catch keeps damageEnergie 0 and the plain path continues — one prompt recorded, no retry', async () => {
@@ -588,7 +643,13 @@ describe('Rire du corbeau (energie split via the real DialogV2 ok.callback)', ()
     expect(damage.damage).toBe(0);
   });
 
-  it('prompt throws SYNCHRONOUSLY inside DialogV2.prompt: the same try/catch rescue — plain path, still exactly one prompt recorded', async () => {
+  // STUB-ONLY scenario: the real core's DialogV2.prompt is an async static — it
+  // cannot throw synchronously — and the real close-without-button path rejects
+  // asynchronously via rejectClose (pinned by the REJECTS test above). This test
+  // exists solely to pin the damageKnight.js:289 `catch { //pass }` rescue against
+  // a synchronous throw inside the call, so any throw-or-rejection between the
+  // prompt call and its await provably leaves damageEnergie at its initial 0.
+  it('prompt throws SYNCHRONOUSLY inside DialogV2.prompt (stub-only — real prompt() cannot throw sync; the real rejection path is the rejectClose twin above): the same try/catch rescue — plain path, still exactly one prompt recorded', async () => {
     setDialogPrompt(() => {
       throw new Error('prompt threw synchronously');
     });

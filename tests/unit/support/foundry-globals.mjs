@@ -49,6 +49,17 @@ globalThis.foundry = {
   },
   applications: {
     api: {
+      // DIVERGENCE from the real core v14 DialogV2.prompt (stub kept thin on
+      // purpose): the real _onSubmit resolves the prompt with
+      //   `const result = (await button?.callback?.(event, target, this)) ?? button?.action;`
+      // so a callback returning null/undefined resolves with the button's ACTION
+      // STRING (e.g. 'ok'), NOT with undefined. This stub (and
+      // setDialogPromptCallback below) resolves with the RAW callback return and
+      // omits the ?? fallback. Reason against the real oracle when writing
+      // callback pins: a hypothetical undefined-returning askModifier callback
+      // would in real core hand back the string 'ok' and `this.damage +=
+      // mod.damage` would still poison to NaN — the production finite guard
+      // (damageBase.js:87) is what prevents ever reaching that case.
       DialogV2: {
         prompt: (options) => {
           dialogPrompts.push(options);

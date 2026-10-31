@@ -15,8 +15,11 @@ describe('getTraitValue', () => {
     expect(getTraitValue('percearmure 120')).toBe(120);
   });
 
-  it('returns NaN when the last token is not a number', () => {
-    expect(getTraitValue('antivehicule')).toBeNaN();
+  // Guard applied 2026-10-31 (helpers.js:15-16): `Number.isFinite(value) ? value : 0` —
+  // a raw entry with no trailing number is NEUTRAL (0) instead of poisoning NaN downstream.
+  it('returns 0 for a non-numeric last token (malformed raw entry -> neutral, not NaN)', () => {
+    expect(getTraitValue('antivehicule')).toBe(0);
+    expect(getTraitValue('penetrant')).toBe(0);
   });
 });
 
@@ -38,9 +41,21 @@ describe('extractTraitValue', () => {
     expect(extractTraitValue(message, 'Fureur')).toBe(3);
   });
 
-  it('returns undefined when the label is absent from the content', () => {
+  // Guard applied 2026-10-31 (helpers.js:29): a missing label span yields the
+  // neutral 0 (was undefined, which poisoned damageTraits.result -> damage NaN).
+  it('returns 0 when the label span is absent from the content (missing span -> neutral, not undefined)', () => {
     const message = makeMessage({ content: '<div>Dégâts</div>' });
-    expect(extractTraitValue(message, 'Meurtrier')).toBeUndefined();
+    expect(extractTraitValue(message, 'Meurtrier')).toBe(0);
+  });
+
+  it('returns 0 when the value span carries a bare "+" with no digits (inner digits guard: was a null[0] TypeError crash)', () => {
+    const message = makeMessage({ content: '<span class="label">Fureur</span><span class="value">+' });
+    expect(extractTraitValue(message, 'Fureur')).toBe(0);
+  });
+
+  it('REGRESSION against the inner digits guard: a digit-bearing span still extracts its first digit run', () => {
+    const message = makeMessage({ content: '<span class="label">Meurtrier</span><span class="value">+7 bonus' });
+    expect(extractTraitValue(message, 'Meurtrier')).toBe(7);
   });
 });
 
