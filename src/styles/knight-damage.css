@@ -1,13 +1,13 @@
 button.revert-damage {
-    background: var(--bg-dark);
-    display: inline-flex;
-    justify-content: center;
-    width: 3ch;
-    margin-left: 2px;
+  background: var(--bg-dark);
+  display: inline-flex;
+  justify-content: center;
+  width: 3ch;
+  margin-left: 2px;
 }
 
 div.damageButton > button {
-    display: grid;
+  display: grid;
   grid-template-columns: 1fr;
   width: 100%;
   background: RGB(76 74 90);
