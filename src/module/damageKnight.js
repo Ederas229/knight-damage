@@ -131,6 +131,7 @@ export class DamageKnight extends DamageBase {
       //log('trait anatheme présent');
       const origin = await foundry.utils.fromUuid(this.origin);
       const user = game.users.activeGM;
+      if (!origin || !user) return; // attaqueur delete ou aucune GM active : l'espoir reste applique, le rappel seul est abandonne
 
       await user.query('knight-damage.addReminder', {
         uuidOrigin: origin.uuid,

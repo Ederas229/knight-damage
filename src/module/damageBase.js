@@ -105,7 +105,8 @@ export class DamageBase {
     if (!this.antianatheme) {
       // eslint-disable-next-line no-undef
       const baseActor = fromUuidSync(`Actor.${message.flags.knight.actor._id}`);
-      this.antianatheme = hasStatusEffect(baseActor, 'anti-anatheme');
+      if (baseActor) this.antianatheme = hasStatusEffect(baseActor, 'anti-anatheme');
+      // attaquant non resolvable -> pas de fallback statut, le flag antianatheme brut reste seul
     }
 
     this.ignoreArmure = this.getWeaponEffects(message, 'ignorearmure');
@@ -222,6 +223,7 @@ export class DamageBase {
 
     const origin = await foundry.utils.fromUuid(this.origin);
     const user = game.users.activeGM;
+    if (!origin || !user) return; // attaqueur delete ou aucune GM active : les stats restent appliquees, le rappel seul est abandonne
 
     await user.query('knight-damage.addReminder', {
       uuidOrigin: origin.uuid,

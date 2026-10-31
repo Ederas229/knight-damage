@@ -295,6 +295,7 @@ async function handleClickRevertDamage(event) {
   const message = event.data.message;
   const html = event.data.html;
   const token = await fromUuid(`Scene.${message.speaker.scene}.Token.${message.speaker.token}`);
+  if (!token?.actor) return; // token supprime entre le jet et la reversion : rien a reinvestir
   const actor = token.actor;
 
   const damage = createDamageObject(actor.type, token, message);
