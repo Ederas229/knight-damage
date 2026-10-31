@@ -221,6 +221,20 @@ describe('percearmure / penetrant parsing from weapon.effets.raw', () => {
     expect(damage.perceArmure).toBe(0);
     expect(damage.penetrant).toBe(0);
   });
+
+  // Clamp added 2026-10-31 (helpers.js getTraitValue): negative entries clamp to 0 at
+  // parse time. Without the clamp (pre-existing hazard, review 4 F2), 'penetrant -6'
+  // would make applyTraitCdf compute effectiveStats.cdf = 10 - (-6) = 16 — the knight's
+  // CdF INFLATED by its own weapon (damage 60 would drop to 44, defender-favoring).
+  it('negative raw entries ("percearmure -5" / "penetrant -6") clamp to 0: applyTraitCdf leaves CdF at 10, not inflated to 16', () => {
+    const { damage } = baseFixture({ weaponRaw: ['percearmure -5', 'penetrant -6'] });
+    expect(damage.perceArmure).toBe(0);
+    expect(damage.penetrant).toBe(0);
+    damage.actorStats.cdf = 10;
+    damage.effectiveStats.cdf = 10;
+    damage.applyTraitCdf();
+    expect(damage.effectiveStats.cdf).toBe(10);
+  });
 });
 
 describe('boolean traits (setBooleanTraits)', () => {

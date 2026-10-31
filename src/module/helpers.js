@@ -13,7 +13,8 @@ export function log(...args) {
 export function getTraitValue(trait) {
   const array = trait.split(' ');
   const value = Number(array[array.length - 1]);
-  return Number.isFinite(value) ? value : 0; // malformed entry (sans nombre) -> neutre au lieu de NaN
+  if (!Number.isFinite(value)) return 0; // entree malformee (sans nombre) -> neutre au lieu de NaN
+  return Math.max(0, value); // un trait d'arme n'est jamais negatif : un negatif boosterait la defense
 }
 
 /**

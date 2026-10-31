@@ -21,6 +21,14 @@ describe('getTraitValue', () => {
     expect(getTraitValue('antivehicule')).toBe(0);
     expect(getTraitValue('penetrant')).toBe(0);
   });
+
+  // Clamp added 2026-10-31 (helpers.js:17): Math.max(0, value). A negative entry was
+  // already finite (Number('-6') === -6, pre-existing hazard flagged by review 4) and
+  // would make applyTraitCdf do 10 - (-6) = 16 — the CdF would be INFLATED.
+  it('returns 0 for a negative value (weapon traits never go negative: no CdF/armure inflation)', () => {
+    expect(getTraitValue('percearmure -5')).toBe(0);
+    expect(getTraitValue('penetrant -6')).toBe(0);
+  });
 });
 
 describe('extractTraitValue', () => {
