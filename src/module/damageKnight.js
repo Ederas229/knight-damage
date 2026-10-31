@@ -279,6 +279,7 @@ export class DamageKnight extends DamageBase {
           label: 'Confirm',
           callback: (event, button) => {
             const value = button.form.elements.value.valueAsNumber;
+            if (!Number.isFinite(value)) return 0; // empty/invalid input -> no energie split
             if (value <= 0) return 0;
             if (value >= Math.trunc(this.damage / 2)) return Math.trunc(this.damage / 2);
             return value;

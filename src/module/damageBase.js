@@ -83,7 +83,9 @@ export class DamageBase {
       ok: {
         label: 'Confirm',
         callback: (event, button) => {
-          return { damage: button.form.elements.value.valueAsNumber };
+          const value = button.form.elements.value.valueAsNumber;
+          if (!Number.isFinite(value)) return { damage: 0 }; // empty/invalid input -> no modifier
+          return { damage: value };
         },
       },
     });
