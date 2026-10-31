@@ -2,14 +2,8 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { DamageVehicule } from '../../src/module/damageVehicule.js';
 import { DamageMecha } from '../../src/module/damageMecha.js';
 import { makeActor, makeKnightMessage, makeToken, traitSpan } from './support/doubles.mjs';
-import { registerUuid, clearUuidRegistry, resetRecorders, recordedQueries } from './support/foundry-globals.mjs';
-
-const ATTACKER_UUID = 'Scene.scene-1.Token.token-atk';
-
-function registerAttacker() {
-  registerUuid('Actor.actor-atk', makeActor('pnj', {}, { id: 'actor-atk' }));
-  registerUuid(ATTACKER_UUID, { uuid: ATTACKER_UUID });
-}
+import { clearUuidRegistry, resetRecorders, recordedQueries } from './support/foundry-globals.mjs';
+import { ATTACKER_UUID, registerAttacker } from './support/knight-fixtures.mjs';
 
 beforeEach(() => {
   resetRecorders();
@@ -171,6 +165,32 @@ describe('vehicule', () => {
     expect(damage.actorStats.armure).toBe(24);
     expect(damage.damageRepartition).toEqual({ armure: 6, passenger: 1 });
   });
+
+  it("raw 'meurtrier'/'fureur'/'ultraviolence' + matching label spans on a vehicule: bools TRUE and results parsed, but the math is bit-identical to the bare twin — 60 -> /10 -> 6, -3 CdF -> 3 absorbed by the 30 armure (27 left), {armure:3, passenger:0} in both. Source oracle: DamageVehicule.calculate calls applyDamageTrait ONLY for destructeur (gates at damageVehicule.js:19-21 and :32-34); meurtrier is applied only by DamageKnight (damageKnight.js:179), and fureur/ultraviolence are never applied by any live class", () => {
+    const spanned = vehiculeFixture({
+      weaponRaw: ['meurtrier', 'fureur', 'ultraviolence'],
+      content: `${traitSpan('Meurtrier', 9)}${traitSpan('Fureur', 3)}${traitSpan('Ultraviolence', 5)}`,
+      targetValue: 60,
+    });
+    // Parsing side (constructor): every raw-set trait gets bool + span value,
+    // destructeur stays the untouched class default.
+    expect(spanned.damage.damageTraits).toEqual({
+      destructeur: { bool: false, result: 0 },
+      meurtrier: { bool: true, result: 9 },
+      ultraviolence: { bool: true, result: 5 },
+      fureur: { bool: true, result: 3 },
+    });
+    const bare = vehiculeFixture({ targetValue: 60 });
+    spanned.damage.calculate();
+    bare.damage.calculate();
+    expect(spanned.damage.damageRepartition).toEqual({ armure: 3, passenger: 0 });
+    // Twin equality: same actorStats (armure 27 / cdf 3 / energie 12, plus the
+    // CHARACTERIZED passenger NaN), same repartition map, same stranded damage.
+    expect(spanned.damage.actorStats).toEqual(bare.damage.actorStats);
+    expect(spanned.damage.damageRepartition).toEqual(bare.damage.damageRepartition);
+    expect(spanned.damage.damage).toBe(bare.damage.damage);
+    expect(spanned.damage.actorStats.armure).toBe(27);
+  });
 });
 
 describe('mechaarmure', () => {
@@ -183,7 +203,7 @@ describe('mechaarmure', () => {
     };
   }
 
-  function mechaFixture({ system, weaponRaw = [], targetValue = 60, mult = 1, targetStat = false } = {}) {
+  function mechaFixture({ system, weaponRaw = [], content = '', targetValue = 60, mult = 1, targetStat = false } = {}) {
     registerAttacker();
     const actor = makeActor('mechaarmure', system ?? mechaSystem(), {
       id: 'actor-mecha',
@@ -191,6 +211,9 @@ describe('mechaarmure', () => {
     });
     const token = makeToken(actor, { id: 'token-def' });
     const message = makeKnightMessage({
+      // With content empty this is byte-identical to makeKnightMessage's own
+      // default content (the Dégâts marker only).
+      content: `<div class="knight-roll"><div>Dégâts</div>${content}</div>`,
       weaponRaw,
       targets: [{ id: 'token-def', value: targetValue }],
     });
@@ -244,5 +267,55 @@ describe('mechaarmure', () => {
     // return with an empty repartition, so these values fail on that mutation.
     expect(damage.actorStats.blindage).toBe(28);
     expect(damage.damageRepartition).toEqual({ blindage: 2, passenger: 0 });
+  });
+
+  it("raw 'destructeur'/'meurtrier'/'fureur'/'ultraviolence' + matching label spans on a mecha: all four bools TRUE and results parsed, but the math is bit-identical to the bare twin — 60 -> /10 -> 6, CdF 0, the 30 blindage absorbs all 6 (24 left), {blindage:6, passenger:0} in both. Source oracle: DamageMecha.calculate contains NO applyDamageTrait call at all — even destructeur, the single trait DamageVehicule applies (its gates), is dead weight on mecha", () => {
+    const spanned = mechaFixture({
+      weaponRaw: ['destructeur', 'meurtrier', 'fureur', 'ultraviolence'],
+      content: `${traitSpan('Destructeur', 12)}${traitSpan('Meurtrier', 9)}${traitSpan('Fureur', 3)}${traitSpan('Ultraviolence', 5)}`,
+      targetValue: 60,
+    });
+    expect(spanned.damage.damageTraits).toEqual({
+      destructeur: { bool: true, result: 12 },
+      meurtrier: { bool: true, result: 9 },
+      ultraviolence: { bool: true, result: 5 },
+      fureur: { bool: true, result: 3 },
+    });
+    const bare = mechaFixture({ targetValue: 60 });
+    spanned.damage.calculate();
+    bare.damage.calculate();
+    expect(spanned.damage.damageRepartition).toEqual({ blindage: 6, passenger: 0 });
+    expect(spanned.damage.actorStats).toEqual(bare.damage.actorStats);
+    expect(spanned.damage.damageRepartition).toEqual(bare.damage.damageRepartition);
+    expect(spanned.damage.damage).toBe(bare.damage.damage);
+    // The +12 destructeur WOULD have made a knight re-armour-soak 12 more
+    // (cf. the gate pins in damage-knight.test.mjs); on mecha armure 24 stays.
+    expect(spanned.damage.actorStats.blindage).toBe(24);
+  });
+
+  it("energie target twin of the vehicule energie pin: /10 colosse applies, CdF 0 changes nothing, the 6 damage is FULLY absorbed by the 10 energie (energie 10 -> 4, damage 0) — the blindage track NEVER runs on this path (blindage stays 30, no blindage key); query {value: 6, stat: 'energie'}, apply() double-writes [{}, {system.energie.value: 4}]", async () => {
+    const { damage, actor } = mechaFixture({ targetValue: 60, targetStat: 'energie' });
+    damage.calculate();
+    const queries = await vi.waitFor(() => {
+      const q = recordedQueries();
+      if (q.length < 1) throw new Error('no query recorded yet');
+      return q;
+    });
+    expect(damage.actorStats.energie).toBe(4);
+    expect(damage.actorStats.blindage).toBe(30);
+    expect(damage.damage).toBe(0); // 6 < 10: the partial branch, nothing stranded
+    expect(damage.damageRepartition).toEqual({ energie: 6 });
+    expect(queries[0].data).toEqual({
+      uuidOrigin: ATTACKER_UUID,
+      uuidActor: 'Scene.scene-1.Token.token-def.Actor.actor-mecha',
+      value: 6,
+      stat: 'energie',
+    });
+
+    damage.apply();
+    // INTENDED (author): apply() always double-updates — the first payload is
+    // empty (no blindage/sante/cohesion/espoir repartition), energie is second.
+    expect(actor.updates[0]).toEqual({});
+    expect(actor.updates[1]).toEqual({ 'system.energie.value': 4 });
   });
 });

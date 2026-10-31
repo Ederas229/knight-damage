@@ -6,16 +6,9 @@ import { DamageBase } from '../../src/module/damageBase.js';
 import { DamageKnight } from '../../src/module/damageKnight.js';
 import { DamageVehicule } from '../../src/module/damageVehicule.js';
 import { makeActor, makeKnightMessage, makeMessage, makeToken, makeHtmlRecorder } from './support/doubles.mjs';
-import {
-  registerUuid,
-  clearUuidRegistry,
-  resetRecorders,
-  recordedQueries,
-  recordedMessages,
-} from './support/foundry-globals.mjs';
+import { clearUuidRegistry, resetRecorders, recordedQueries, recordedMessages } from './support/foundry-globals.mjs';
+import { ATTACKER_UUID, VICTIM_UUID, knightSystem, registerAttacker } from './support/knight-fixtures.mjs';
 
-const ATTACKER_UUID = 'Scene.scene-1.Token.token-atk';
-const VICTIM_UUID = 'Scene.scene-1.Token.token-def.Actor.actor-def';
 const VEHICULE_UUID = 'Scene.scene-1.Token.token-def.Actor.actor-veh';
 // Distinct canned html() per selector: the string below is only reachable
 // through html.find('.message-content').html(), so the message.update content
@@ -30,38 +23,6 @@ const CANNED_HTML = {
 
 function makeRevertHtmlRecorder() {
   return makeHtmlRecorder({ html: CANNED_HTML });
-}
-
-function registerAttacker() {
-  registerUuid('Actor.actor-atk', makeActor('pnj', {}, { id: 'actor-atk' }));
-  registerUuid(ATTACKER_UUID, { uuid: ATTACKER_UUID });
-}
-
-// Same standard knight fixture as damage-knight.test.mjs.
-function knightSystem({
-  armure = 100,
-  cdf = 10,
-  egide = 0,
-  guardianArmure = 15,
-  guardianCdf = 5,
-  sante = 20,
-  espoir = 15,
-  espoirReduction = 3,
-  energie = 12,
-  wear = 'normal',
-} = {}) {
-  return {
-    armure: { value: armure },
-    champDeForce: { value: cdf },
-    egide: { value: egide },
-    equipements: {
-      guardian: { armure: { value: guardianArmure }, champDeForce: { value: guardianCdf } },
-    },
-    sante: { value: sante },
-    espoir: { value: espoir, reduction: espoirReduction },
-    energie: { value: energie },
-    wear,
-  };
 }
 
 // A recap message double carrying the flags revertDamage reads. isRecap: true

@@ -9,9 +9,10 @@ import {
   setDialogPrompt,
   setDialogPromptCallback,
   resetDialogPrompt,
+  recordedQueries,
+  setActiveGM,
 } from './support/foundry-globals.mjs';
-
-const ATTACKER_UUID = 'Scene.scene-1.Token.token-atk';
+import { ATTACKER_UUID, VICTIM_UUID, registerAttacker } from './support/knight-fixtures.mjs';
 
 function baseFixture({
   weaponRaw = [],
@@ -20,8 +21,7 @@ function baseFixture({
   actorType = 'knight',
   system = {},
 } = {}) {
-  registerUuid('Actor.actor-atk', makeActor('pnj', {}, { id: 'actor-atk' }));
-  registerUuid(ATTACKER_UUID, { uuid: ATTACKER_UUID });
+  registerAttacker();
 
   const actor = makeActor(actorType, system, {
     id: 'actor-def',
@@ -44,8 +44,7 @@ afterEach(() => {
 
 describe('damage extraction from flags.knight.targets', () => {
   it('multiplies the target value by mult and applies Math.ceil', () => {
-    registerUuid('Actor.actor-atk', makeActor('pnj', {}, { id: 'actor-atk' }));
-    registerUuid(ATTACKER_UUID, { uuid: ATTACKER_UUID });
+    registerAttacker();
     const build = (value, mult) => {
       const token = makeToken(makeActor('knight', {}), { id: 'token-def' });
       const message = makeKnightMessage({ targets: [{ id: 'token-def', value }] });
@@ -80,8 +79,7 @@ describe('damage extraction from flags.knight.targets', () => {
   });
 
   it('ceil-vs-round discriminator: value 7 x mult 0.2 (= 1.4000000000000001 in floats) becomes Math.ceil 2, not Math.round 1', () => {
-    registerUuid('Actor.actor-atk', makeActor('pnj', {}, { id: 'actor-atk' }));
-    registerUuid(ATTACKER_UUID, { uuid: ATTACKER_UUID });
+    registerAttacker();
     const token = makeToken(makeActor('knight', {}), { id: 'token-def' });
     const message = makeKnightMessage({ targets: [{ id: 'token-def', value: 7 }] });
     const damage = new DamageBase(token, message, 0.2, false);
@@ -105,8 +103,7 @@ describe('Débordement / Mode Oriflamme content fallback', () => {
 
   it('also triggers on the "Mode Oriflamme :" marker', () => {
     const content = '<div>Mode Oriflamme :</div>\n<div>\n 25\n</div>';
-    registerUuid('Actor.actor-atk', makeActor('pnj', {}, { id: 'actor-atk' }));
-    registerUuid(ATTACKER_UUID, { uuid: ATTACKER_UUID });
+    registerAttacker();
     const token = makeToken(makeActor('knight', {}), { id: 'token-def' });
     const message = makeKnightMessage({ content, targets: [] });
     const damage = new DamageBase(token, message, 2, false);
@@ -118,8 +115,7 @@ describe('Débordement / Mode Oriflamme content fallback', () => {
   // pre-fix code then did `number[0]` on null — a TypeError crash in the constructor.
   it('CRLF content now PARSES (regex relaxed with \\r?): >\\r\\n 43 \\r\\n< x mult 1 = 43 (pre-fix: regex miss then a null[0] TypeError)', () => {
     const content = '<div>Dégâts</div><div>Débordement</div>\r\n<div>\r\n 43\r\n</div>';
-    registerUuid('Actor.actor-atk', makeActor('pnj', {}, { id: 'actor-atk' }));
-    registerUuid(ATTACKER_UUID, { uuid: ATTACKER_UUID });
+    registerAttacker();
     const token = makeToken(makeActor('knight', {}), { id: 'token-def' });
     const message = makeKnightMessage({ content, targets: [] });
     const damage = new DamageBase(token, message, 1, false);
@@ -131,8 +127,7 @@ describe('Débordement / Mode Oriflamme content fallback', () => {
   // Pre-fix this construction threw a TypeError (number[0] on null).
   it('Débordement marker with NO numeric fragment: the null-guard keeps damage at its 0 default — construction succeeds, no TypeError', () => {
     const content = '<div>Dégâts</div><div>Débordement</div><div>pas de nombre ici</div>';
-    registerUuid('Actor.actor-atk', makeActor('pnj', {}, { id: 'actor-atk' }));
-    registerUuid(ATTACKER_UUID, { uuid: ATTACKER_UUID });
+    registerAttacker();
     const token = makeToken(makeActor('knight', {}), { id: 'token-def' });
     const message = makeKnightMessage({ content, targets: [] });
     let damage;
@@ -144,8 +139,7 @@ describe('Débordement / Mode Oriflamme content fallback', () => {
 
   it('auto-adds initiator item effects to weapon.effets.raw on the Débordement path', () => {
     const content = '<div>Débordement</div>\n<div>\n 40\n</div>';
-    registerUuid('Actor.actor-atk', makeActor('pnj', {}, { id: 'actor-atk' }));
-    registerUuid(ATTACKER_UUID, { uuid: ATTACKER_UUID });
+    registerAttacker();
     const token = makeToken(makeActor('knight', {}), { id: 'token-def' });
     const message = makeKnightMessage({
       content,
@@ -163,8 +157,7 @@ describe('Débordement / Mode Oriflamme content fallback', () => {
 
   it('does not add effects when the initiator lacks the items', () => {
     const content = '<div>Débordement</div>\n<div>\n 40\n</div>';
-    registerUuid('Actor.actor-atk', makeActor('pnj', {}, { id: 'actor-atk' }));
-    registerUuid(ATTACKER_UUID, { uuid: ATTACKER_UUID });
+    registerAttacker();
     const token = makeToken(makeActor('knight', {}), { id: 'token-def' });
     const message = makeKnightMessage({ content, targets: [] });
     new DamageBase(token, message, 1, false);
@@ -173,8 +166,7 @@ describe('Débordement / Mode Oriflamme content fallback', () => {
 
   it('ceil-vs-round discriminator: Débordement 7 x mult 0.2 becomes Math.ceil 2, not Math.round 1 (same fix as the targets path)', () => {
     const content = '<div>Dégâts</div><div>Débordement</div>\n<div>\n 7\n</div>';
-    registerUuid('Actor.actor-atk', makeActor('pnj', {}, { id: 'actor-atk' }));
-    registerUuid(ATTACKER_UUID, { uuid: ATTACKER_UUID });
+    registerAttacker();
     const token = makeToken(makeActor('knight', {}), { id: 'token-def' });
     const message = makeKnightMessage({ content, targets: [] });
     const damage = new DamageBase(token, message, 0.2, false);
@@ -183,8 +175,7 @@ describe('Débordement / Mode Oriflamme content fallback', () => {
 
   it('the Débordement auto-adds go into the message flag array, never back into the array the caller passed to makeKnightMessage', () => {
     const content = '<div>Débordement</div>\n<div>\n 40\n</div>';
-    registerUuid('Actor.actor-atk', makeActor('pnj', {}, { id: 'actor-atk' }));
-    registerUuid(ATTACKER_UUID, { uuid: ATTACKER_UUID });
+    registerAttacker();
     const token = makeToken(makeActor('knight', {}), { id: 'token-def' });
     const callerArray = [];
     const message = makeKnightMessage({
@@ -268,6 +259,40 @@ describe('boolean traits (setBooleanTraits)', () => {
     expect(damage.antianatheme).toBe(true);
   });
 
+  // Guard committed 2026-10-31 (5fbba11, damageBase.js:108): `if (baseActor)`
+  // around the status fallback — an unresolvable Actor.<_id> (deleted attacker
+  // document) used to reach hasStatusEffect(undefined, ...) and throw a
+  // TypeError INSIDE the constructor, killing the whole damage pipeline.
+  it('G1 pin (commit 5fbba11): flags.knight.actor._id NOT in the uuid registry + no raw antianatheme — construction succeeds (no hasStatusEffect(undefined) crash), antianatheme stays false, and the rest of the constructor is untouched (damage 60, perceArmure 40, penetrant 6, CdF 10 -> effective 4)', () => {
+    // Deliberately NO registerAttacker(): fromUuidSync('Actor.actor-atk')
+    // resolves undefined here.
+    const token = makeToken(makeActor('knight', {}), { id: 'token-def' });
+    const message = makeKnightMessage({
+      weaponRaw: ['percearmure 40', 'penetrant 6'],
+      targets: [{ id: 'token-def', value: 60 }],
+    });
+    let damage;
+    expect(() => {
+      damage = new DamageBase(token, message, 1, false);
+    }).not.toThrow();
+    expect(damage.antianatheme).toBe(false);
+    expect(damage.damage).toBe(60);
+    expect(damage.perceArmure).toBe(40);
+    expect(damage.penetrant).toBe(6);
+    // The CdF math the guard protects still runs normally off the parsed values.
+    damage.actorStats.cdf = 10;
+    damage.effectiveStats.cdf = 10;
+    damage.applyTraitCdf();
+    expect(damage.effectiveStats.cdf).toBe(4);
+  });
+
+  it("G1 twin: raw 'antianatheme' with the attacker STILL unresolvable — the raw flag alone still sets the trait (skipping the fallback never vetoes the raw read at damageBase.js:104)", () => {
+    const token = makeToken(makeActor('knight', {}), { id: 'token-def' });
+    const message = makeKnightMessage({ weaponRaw: ['antianatheme'] });
+    const damage = new DamageBase(token, message, 1, false);
+    expect(damage.antianatheme).toBe(true);
+  });
+
   it('isRecap short-circuits boolean traits and perce/penetrant parsing', () => {
     // Empty uuid registry: if setBooleanTraits ran, fromUuidSync would return
     // undefined and hasStatusEffect(undefined, ...) would throw.
@@ -283,6 +308,42 @@ describe('boolean traits (setBooleanTraits)', () => {
     expect(damage.perceArmure).toBe(0);
     expect(damage.penetrant).toBe(0);
     expect(damage.damageTraits.destructeur.bool).toBe(false);
+  });
+});
+
+describe('calculateEnergie — G2 guard twin (commit 5fbba11, damageBase.js:226)', () => {
+  // Unlike the DamageKnight dispatch pins (which call calculate() and can only
+  // see the UNAWARDED calculateEnergie remainder via the runner's unhandled-
+  // rejection trap), these twins await the real method's promise directly:
+  // pre-5fbba11 that promise REJECTED with a TypeError (origin.uuid on null /
+  // user.query on null), so the resolves assertion below is the direct kill.
+  function energieBaseTwin({ withAttacker }) {
+    if (withAttacker) registerAttacker(); // else: nothing resolves for the origin uuid
+    const actor = makeActor('knight', {}, { id: 'actor-def', uuid: VICTIM_UUID });
+    const token = makeToken(actor, { id: 'token-def' });
+    const message = makeKnightMessage({ targets: [{ id: 'token-def', value: 60 }] });
+    const damage = new DamageBase(token, message, 1, 'energie');
+    damage.actorStats.energie = 12;
+    damage.effectiveStats.energie = 12;
+    return { damage, actor };
+  }
+
+  it('unresolvable origin uuid: await calculateEnergie() RESOLVES (undefined), the energie soak still lands (60 - 12 -> {energie: 12}, stat 0, 48 stranded), zero queries — pre-guard the same await rejected on origin.uuid', async () => {
+    const { damage } = energieBaseTwin({ withAttacker: false });
+    await expect(damage.calculateEnergie()).resolves.toBeUndefined();
+    expect(damage.actorStats.energie).toBe(0);
+    expect(damage.damageRepartition).toEqual({ energie: 12 });
+    expect(damage.damage).toBe(48);
+    expect(recordedQueries()).toEqual([]);
+  });
+
+  it('attacker registered but activeGM null: same resolution, same soak, still zero queries — pre-guard the null user.query call threw', async () => {
+    const { damage } = energieBaseTwin({ withAttacker: true });
+    setActiveGM(null);
+    await expect(damage.calculateEnergie()).resolves.toBeUndefined();
+    expect(damage.actorStats.energie).toBe(0);
+    expect(damage.damageRepartition).toEqual({ energie: 12 });
+    expect(recordedQueries()).toEqual([]);
   });
 });
 

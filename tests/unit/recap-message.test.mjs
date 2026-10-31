@@ -4,14 +4,8 @@ import { DamageKnight } from '../../src/module/damageKnight.js';
 import { DamageVehicule } from '../../src/module/damageVehicule.js';
 import { DamageMecha } from '../../src/module/damageMecha.js';
 import { makeActor, makeKnightMessage, makeToken } from './support/doubles.mjs';
-import { registerUuid, clearUuidRegistry, resetRecorders, recordedMessages } from './support/foundry-globals.mjs';
-
-const ATTACKER_UUID = 'Scene.scene-1.Token.token-atk';
-
-function registerAttacker() {
-  registerUuid('Actor.actor-atk', makeActor('pnj', {}, { id: 'actor-atk' }));
-  registerUuid(ATTACKER_UUID, { uuid: ATTACKER_UUID });
-}
+import { clearUuidRegistry, resetRecorders, recordedMessages } from './support/foundry-globals.mjs';
+import { ATTACKER_UUID, registerAttacker } from './support/knight-fixtures.mjs';
 
 beforeEach(() => {
   resetRecorders();

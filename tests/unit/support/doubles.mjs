@@ -115,6 +115,10 @@ export function makeKnightMessage({
 // Recorder for the jQuery-like `html` argument of revertDamage: the source
 // calls html.find(sel).css(...), html.find(sel).remove() and
 // html.find('.message-content').html(). Every selector/action is recorded.
+// The entrypoint's addRevertDamageEvent instead calls html.find(sel).on(...)
+// (and the recap hover handlers call html.on(...) at the root): both .on
+// forms are recorded with their bound data + handler (see onBindings), so a
+// test can drive the real click handler honestly.
 //
 // html() returns a DISTINCT canned string PER SELECTOR (defaults below, the
 // caller overrides with `{ html: { '.message-content': '...' } }`), so the
@@ -130,6 +134,20 @@ export function makeHtmlRecorder({ html = {} } = {}) {
     ...html,
   };
   const calls = [];
+  function recordOn(selector) {
+    // jQuery offers both .on(events, handler) and .on(events, data, handler);
+    // the entrypoint uses the 3-arg form for the revert click and the 2-arg
+    // form for the recap hover handlers. Both are recorded with the handler
+    // resolved, so a test can re-invoke the real handler with { data }.
+    // Regular function (NOT an arrow): called as a chain member, `this` is the
+    // chain object the .on was invoked on, so the jQuery chain stays intact.
+    return function (event, dataOrHandler, maybeHandler) {
+      const handler = maybeHandler === undefined ? dataOrHandler : maybeHandler;
+      const data = maybeHandler === undefined ? undefined : dataOrHandler;
+      calls.push({ selector, action: 'on', event, data, handler });
+      return this;
+    };
+  }
   const chainFor = (selector) => ({
     css(property, value) {
       calls.push({ selector, action: 'css', property, value });
@@ -146,11 +164,15 @@ export function makeHtmlRecorder({ html = {} } = {}) {
       }
       return canned[selector];
     },
+    on: recordOn(selector),
   });
   return {
     calls,
     selectorsUsed: () => calls.map((c) => c.selector),
+    onBindings: (selector) =>
+      calls.filter((c) => c.action === 'on' && (selector === undefined || c.selector === selector)),
     find: (selector) => chainFor(selector),
+    on: recordOn('<root>'),
   };
 }
 

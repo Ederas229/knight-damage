@@ -1,6 +1,8 @@
 // Foundry global stubs for the unit suite (vitest setupFiles).
 // Only what the damage classes touch *inside methods*: foundry.utils,
-// foundry.applications.api.DialogV2, fromUuidSync, game, canvas, ChatMessage.
+// foundry.applications.api.DialogV2, fromUuidSync, game, canvas, ChatMessage —
+// plus the entrypoint's import-time surface (Hooks) and its method-time
+// globals (fromUuid, $) for the dispatch/revert pins in entrypoint-dispatch.
 
 const uuidRegistry = new Map();
 
@@ -72,16 +74,51 @@ globalThis.foundry = {
 
 globalThis.fromUuidSync = (uuid) => uuidRegistry.get(uuid);
 
+// Bare-global twin of foundry.utils.fromUuid: the module entrypoint
+// (knight-damage.js) calls the GLOBAL fromUuid (handleClickRevertDamage,
+// generateReminderMessage), not the namespaced one. Same registry semantics
+// (null for unresolvable uuids — the G4 guard pin depends on that).
+globalThis.fromUuid = async (uuid) => uuidRegistry.get(uuid) ?? null;
+
+// Hooks recorder: importing src/module/knight-damage.js executes its
+// top-level Hooks.once('init') + Hooks.on(...) registrations. The stub only
+// RECORDS the handlers (never invokes them), so CONFIG is never needed — the
+// init callback body stays unrun. Registrations are import-time and one-shot
+// per worker: resetRecorders() deliberately does NOT clear this list.
+const hookRegistrations = [];
+globalThis.Hooks = {
+  once: (hook, fn) => hookRegistrations.push({ hook, once: true, fn }),
+  on: (hook, fn) => hookRegistrations.push({ hook, once: false, fn }),
+};
+
+// DIVERGENCE from real core: the renderChatMessageHTML handler does
+// `html = $(html)`, and the real jQuery wrapper is what carries .find/.on.
+// The unit stub is the identity pass-through — the doubles' html recorder
+// already implements the exact chained API the source uses
+// (.find(sel).on(event, data, handler), .css, .remove, .html).
+globalThis.$ = (argument) => argument;
+
+const DEFAULT_ACTIVE_GM = {
+  id: 'user-unit-test',
+  name: 'GM de test',
+  query: async (queryName, queryData) => {
+    queryCalls.push({ queryName, data: structuredClone(queryData) });
+    return {};
+  },
+};
+
+// activeGM is a GETTER over a mutable binding (was a fixed object property):
+// the committed src guards (damageBase.js:226 / damageKnight.js:134) read
+// `game.users.activeGM` and must be able to see null — the no-GM guard pins
+// need it clearable. resetRecorders() restores the default GM, so a nulled
+// activeGM can never leak into the next test.
+let activeGM = DEFAULT_ACTIVE_GM;
+
 globalThis.game = {
   userId: 'user-unit-test',
   users: {
-    activeGM: {
-      id: 'user-unit-test',
-      name: 'GM de test',
-      query: async (queryName, queryData) => {
-        queryCalls.push({ queryName, data: structuredClone(queryData) });
-        return {};
-      },
+    get activeGM() {
+      return activeGM;
     },
   },
 };
@@ -121,6 +158,23 @@ export function recordedDialogPrompts() {
   return [...dialogPrompts];
 }
 
+// Hook handlers recorded at import time from src/module/knight-damage.js.
+// Pass a hook name to filter ('renderChatMessageHTML'), or omit for all
+// registrations, in registration order: [{ hook, once, fn }].
+export function registeredHooks(hookName) {
+  return hookName ? hookRegistrations.filter((r) => r.hook === hookName) : [...hookRegistrations];
+}
+
+// Clears (or replaces) the active GM the src reminder paths read; null
+// simulates "no active GM" for the guard pins (damageBase.js:226).
+export function setActiveGM(user) {
+  activeGM = user;
+}
+
+export function resetActiveGM() {
+  activeGM = DEFAULT_ACTIVE_GM;
+}
+
 // Also folds in resetDialogPrompt() so a stray programmed stub can never leak
 // into the next test (the existing afterEach(resetDialogPrompt) calls in the test
 // files stay harmless and idempotent).
@@ -129,6 +183,7 @@ export function resetRecorders() {
   queryCalls.length = 0;
   dialogPrompts.length = 0;
   resetDialogPrompt();
+  resetActiveGM();
 }
 
 export function setDialogPrompt(handler) {

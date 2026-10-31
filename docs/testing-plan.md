@@ -9,7 +9,9 @@ CI order becomes `lint -> test:unit -> build`. The e2e suite stays local (`test:
 
 ## Phase U — Unit suite with vitest (do this first; it's cheaper than e2e)
 
-The damage classes touch **no Foundry APIs at module top-level** — `foundry.*`, `game`, `ChatMessage`, `fromUuidSync` are only called inside methods — so they are unit-testable with plain object doubles.
+> **Status (2026-10-31): COMPLETE.** The suite is in `tests/unit/` (7 files, 145 tests, runs in CI after lint and in the husky pre-commit hook). The review-5 follow-up batch is pinned too: the four uuid-resolution guards committed in `5fbba11` (G1-G4), the destructeur/cuir-du-taureau gate positive control, vehicule/mecha trait non-application, the mecha energie path, and the `createDamageObject` dispatch + revert-click handler via the `renderChatMessageHTML` registration.
+
+The damage classes touch **no Foundry APIs at module top-level** — `foundry.*`, `game`, `ChatMessage`, `fromUuidSync` are only called inside methods — so they are unit-testable with plain object doubles. (Update since review 5: importing the *entrypoint* is also unit-safe — its only top-level effect is `Hooks.once/on` registration, which the stubs record; `tests/unit/entrypoint-dispatch.test.mjs` uses that.)
 
 1. `npm i -D vitest`; scripts:
    ```json
@@ -44,6 +46,8 @@ Known code quirks the unit suite must pin (verify, don't silently "fix"):
 CI: add unit tests to `.github/workflows/checks.yml` (`npm ci` → `npm run lint` → `npm test` → build), same Node 20 setup as existing jobs. Keep husky pre-commit lint-only unless `vitest run` stays under ~2s.
 
 Unit scope boundary: anything touching `Hooks`, `canvas`, `renderXxx` handlers, jQuery `html` chaining, or sockets/`CONFIG.queries` wiring stays e2e. Unit tests instantiate `Damage*` classes directly and call `calculate()` / `apply()` / `generateRecapMessage()` themselves.
+
+Known honest limits of the unit layer (review 5): the stubbed `actor.update` performs **no data-model validation**, the uuid **grammar** is never verified by the stub registry, and the `mergeObject` stub lacks the v14 **operator objects** — so the three uuid null-resolution crash sites review 5 found are guarded in src (commit `5fbba11`) and pinned unit-side, but only the e2e layer can exercise **real** uuid resolution.
 
 ## Phase 0 — E2E prerequisites (verify by hand first)
 
@@ -103,6 +107,8 @@ Every core feature keys off the knight system's message output: `flags.knight.ta
 
 Use A for one integration test per actor type; use B for the combinatorics (traits, multiplier, armor interactions).
 
+> **Phase 2 note (shared fixture problem, resolved direction):** once the recorded fixture JSONs exist, they must **REPLACE** the hand-built standard fixture (`STANDARD_RAW` / `knightSystem` in `tests/unit/support/knight-fixtures.mjs`) as the shared source of truth for both suites — the hand-built fixture is the stand-in until recording lands.
+
 ## Phase 3 — Core damage pipeline (`damage-knight.test.mjs`)
 
 Shared helper per test case: place the fixture message, **control** the victim token, click the injected button, `waitFor` on plain stats objects:
@@ -143,7 +149,7 @@ Test cases (knight victim, DamageKnight math order: Egide → CdF → … → ar
 
 ## Phase 4 — Vehicule / Mecha (`damage-vehicule-mecha.test.mjs`)
 
-- Vehicule: `blindage` track; `isColosseApplied()` is always true for `vehicule` → incoming damage `trunc(damage/10)` — the single most regression-prone rule; overflow to santé via /5.
+- Vehicule: ~~`blindage` track~~ — **ERRATUM (2026-10-31):** the vehicule damage class tracks `system.armure`, not `blindage`; `blindage` is the **mecha** stat. See `DamageVehicule.setActorStats` (`system.armure.value`) and the suite's documentation comment in `tests/unit/damage-vehicule-mecha.test.mjs` (vehicule describe). `isColosseApplied()` is always true for `vehicule` → incoming damage `trunc(damage/10)` — the single most regression-prone rule; overflow to santé via /5.
 - `antivehicule` weapon effect defeats the /10 colosse rule → test both with and without.
 - Mechaarmure: its stat track (blindage/cohesion mapping in `apply()` — `cohesion` writes to `system.sante.value`; assert the actual system field name).
 

@@ -11,42 +11,15 @@ import {
   setDialogPrompt,
   setDialogPromptCallback,
   resetDialogPrompt,
+  setActiveGM,
 } from './support/foundry-globals.mjs';
-
-const ATTACKER_UUID = 'Scene.scene-1.Token.token-atk';
-const VICTIM_UUID = 'Scene.scene-1.Token.token-def.Actor.actor-def';
-// Frozen so any source-side push into weapon.effets.raw that ever bypassed
-// the makeKnightMessage copy would throw here instead of silently leaking
-// into every later fixture using this constant.
-const STANDARD_RAW = Object.freeze(['percearmure 40', 'penetrant 6']);
-
-// Standard fixture per the test plan: full 100 armor, CdF 10 straddling
-// penetrant 6, guardian gear, sante 20, espoir 15 (reduction 3), energie 12.
-function knightSystem({
-  armure = 100,
-  cdf = 10,
-  egide = 0,
-  guardianArmure = 15,
-  guardianCdf = 5,
-  sante = 20,
-  espoir = 15,
-  espoirReduction = 3,
-  energie = 12,
-  wear = 'normal',
-} = {}) {
-  return {
-    armure: { value: armure },
-    champDeForce: { value: cdf },
-    egide: { value: egide },
-    equipements: {
-      guardian: { armure: { value: guardianArmure }, champDeForce: { value: guardianCdf } },
-    },
-    sante: { value: sante },
-    espoir: { value: espoir, reduction: espoirReduction },
-    energie: { value: energie },
-    wear,
-  };
-}
+import {
+  ATTACKER_UUID,
+  VICTIM_UUID,
+  STANDARD_RAW,
+  knightSystem,
+  registerAttacker,
+} from './support/knight-fixtures.mjs';
 
 function knightFixture({
   system,
@@ -58,8 +31,7 @@ function knightFixture({
   targetStat = false,
   initiatorSystemOrigin = null,
 } = {}) {
-  registerUuid('Actor.actor-atk', makeActor('pnj', {}, { id: 'actor-atk' }));
-  registerUuid(ATTACKER_UUID, { uuid: ATTACKER_UUID });
+  registerAttacker();
 
   const actor = makeActor('knight', system ?? knightSystem(), {
     id: 'actor-def',
@@ -89,8 +61,7 @@ function zeroArmureFixture({
   content = '',
   targetValue = 60,
 } = {}) {
-  registerUuid('Actor.actor-atk', makeActor('pnj', {}, { id: 'actor-atk' }));
-  registerUuid(ATTACKER_UUID, { uuid: ATTACKER_UUID });
+  registerAttacker();
   const actor = makeActor('knight', system, {
     id: 'actor-def',
     uuid: VICTIM_UUID,
@@ -275,6 +246,44 @@ describe('destructeur gate (damageKnight.js:151-154: bonus only when the armure 
     expect(damage.actorStats.armureGuardian).toBe(15);
     expect(damage.actorStats.sante).toBe(0);
     expect(damage.damage).toBe(36);
+  });
+
+  // POSITIVE control at the gate itself — review-5's surviving mutant: deleting
+  // `|| this.cuirDuTaureau` from the gate (damageKnight.js:153; review-5 cites
+  // the pre-guard line number 152) WITHDRAWS the destructeur bonus against a
+  // cuir-du-taureau victim whose armor is bypassed, yet every negative above
+  // stays green. WARNING: deleting the cuirDuTaureau clause at :153 flips THIS
+  // fixture — and the discriminator is subtle: the repartition and all three
+  // actorStats values are IDENTICAL with or without the +12 (armure 30,
+  // armureGuardian 15 and sante 20 all saturate either way); only the STRANDED
+  // damage moves — 12 pinned here vs 0 under the mutant.
+  it('cuirDuTaureau RE-OPENS the destructeur gate on the bypassed victim (INTENDED author polarity: system.active.base FALSY = active): bonus lands 56+12=68, armure 30 -> 38 left, guardian 15 -> 23 left, /5 carry trunc((30+15)/5)=9 pre-drains sante to 11, the sante stage soaks the remaining 11 of the 23 -> repartition {armure:30, armureGuardian:15, sante:20}, all three tracks at 0, STRANDED 12 (mutant: 0; the worn-armor negative twin above strands 36 without the bonus)', async () => {
+    const { damage } = knightFixture({
+      system: knightSystem({ armure: 30 }),
+      weaponRaw: [...STANDARD_RAW, 'destructeur'],
+      content: traitSpan('Destructeur', 12),
+      actorItems: [makeItem('Cuir du taureau', { system: { active: { base: false } } })],
+    });
+    expect(damage.cuirDuTaureau).toBe(true);
+    // Checked BEFORE calculate: isArmorIgnored() re-reads actorStats live and
+    // after the full soak it would trivially read true (0 <= 40) anyway.
+    expect(damage.isArmorIgnored()).toBe(true); // 30 <= perce-armure 40
+    expect(damage.damageTraits.destructeur).toEqual({ bool: true, result: 12 });
+    await damage.calculate();
+    // Gate 1 (:153) applies +12 (cuirDuTaureau re-opens it); gate 2 (:157, the
+    // armure track itself) is re-opened by the same item — see the existing
+    // 'cuirDuTaureau re-engages the armure track' pin for that clause alone.
+    // The /5 carry (9) is game-rule collateral from the 45 armor units
+    // absorbed (30+15): it siphons EXTRA sante loss on top of the soak, so
+    // sante's 20 points = 9 carry + 11 soak, NOT 23+9=32 (the review-5 hint —
+    // impossible: repartition.sante saturates at the victim's 20).
+    expect(damage.damageRepartition).toEqual({ armure: 30, armureGuardian: 15, sante: 20 });
+    expect(damage.actorStats.armure).toBe(0);
+    expect(damage.actorStats.armureGuardian).toBe(0);
+    expect(damage.actorStats.sante).toBe(0);
+    // INTENDED (author) bypass-drop tail: damage beyond the last stat (sante)
+    // stays on this.damage and is silently dropped (23 - 11 soaked = 12).
+    expect(damage.damage).toBe(12);
   });
 });
 
@@ -855,5 +864,90 @@ describe('0-damage end-to-end flow (Débordement marker, no numeric fragment)', 
     }
     expect(messages[0].flags['knight-damage']).toMatchObject({ recap: {}, isRecap: true, origin: ATTACKER_UUID });
     expect(recordedQueries()).toEqual([]);
+  });
+});
+
+// Guard pins for the four uuid-resolution crash sites fixed in commit 5fbba11
+// (review-5 hunt). The src-side guards are committed; these tests pin the
+// DEGRADED behavior they produce — reminder queries abandoned while the stat
+// math stays fully applied. (The fourth site, handleClickRevertDamage, is
+// entrypoint-scope and pinned in entrypoint-dispatch.test.mjs.)
+describe('unresolvable attacker / missing GM guards (commit 5fbba11)', () => {
+  // The abandoned-reminder paths record NOTHING to vi.waitFor, so flush the
+  // microtask backlog with a macrotask boundary instead: every promise in the
+  // guard chain (the async fromUuid stub) settles long before the timer fires.
+  const flushPendingPromiseWork = () => new Promise((resolve) => setTimeout(resolve, 0));
+
+  // Builds the standard fixture WITHOUT registerAttacker(): neither
+  // Actor.actor-atk nor the Scene...Token.token-atk uuid resolves.
+  function unresolvableAttackerFixture(targetStat = false) {
+    const actor = makeActor('knight', knightSystem(), { id: 'actor-def', uuid: VICTIM_UUID, name: 'Victime' });
+    const token = makeToken(actor, { id: 'token-def' });
+    const message = makeKnightMessage({
+      weaponRaw: STANDARD_RAW,
+      targets: [{ id: 'token-def', value: 60 }],
+    });
+    return { damage: new DamageKnight(token, message, 1, targetStat), actor, token, message };
+  }
+
+  it('G1 (knight twin of the base pin): unresolvable attacker._id — the knight constructs (no hasStatusEffect(undefined) TypeError), antianatheme stays false, and the FULL standard worked example proceeds unchanged: CdF 10-6=4, damage 56, armure 100->44, carry trunc(56/5)=11, sante 20->9, {armure: 56, sante: 11}', async () => {
+    const { damage } = unresolvableAttackerFixture();
+    expect(damage.antianatheme).toBe(false);
+    await damage.calculate();
+    expect(damage.effectiveStats.cdf).toBe(4);
+    expect(damage.actorStats.armure).toBe(44);
+    expect(damage.actorStats.sante).toBe(9);
+    expect(damage.damageRepartition).toEqual({ armure: 56, sante: 11 });
+    expect(recordedQueries()).toEqual([]);
+  });
+
+  it('G2: energie target + unresolvable attacker token uuid — calculateEnergie still soaks energie (56 - 12 -> energie 0, {energie: 12}, 44 stranded on this.damage) and apply() still double-writes [{}, {"system.energie.value": 0}], but the addReminder query is abandoned', async () => {
+    const { damage, actor } = unresolvableAttackerFixture('energie');
+    await damage.calculate();
+    // The soak happens BEFORE the guard (damageBase.js:216-218 are synchronous
+    // ahead of the first await), so the stat numbers are already final here.
+    expect(damage.actorStats.energie).toBe(0);
+    expect(damage.damageRepartition).toEqual({ energie: 12 });
+    // CHARACTERIZATION: the 56-12=44 overflow stays on this.damage — the
+    // energie path never feeds it to another track.
+    expect(damage.damage).toBe(44);
+    await flushPendingPromiseWork();
+    expect(recordedQueries()).toEqual([]);
+    await damage.apply();
+    // INTENDED (author) double update: first payload empty on this path.
+    expect(actor.updates).toEqual([{}, { 'system.energie.value': 0 }]);
+  });
+
+  it('G2 twin: attacker REGISTERED but game.users.activeGM null — identical numbers ({energie: 12}, energie 12->0), still zero queries: the guard (damageBase.js:226) abandons only the reminder', async () => {
+    registerAttacker();
+    const actor = makeActor('knight', knightSystem(), { id: 'actor-def', uuid: VICTIM_UUID, name: 'Victime' });
+    const token = makeToken(actor, { id: 'token-def' });
+    const message = makeKnightMessage({ weaponRaw: STANDARD_RAW, targets: [{ id: 'token-def', value: 60 }] });
+    const damage = new DamageKnight(token, message, 1, 'energie');
+    // The stub exposes activeGM as a clearable getter (foundry-globals.mjs);
+    // resetRecorders() restores the default GM in the next beforeEach.
+    setActiveGM(null);
+    await damage.calculate();
+    expect(damage.actorStats.energie).toBe(0);
+    expect(damage.damageRepartition).toEqual({ energie: 12 });
+    await flushPendingPromiseWork();
+    expect(recordedQueries()).toEqual([]);
+    await damage.apply();
+    expect(actor.updates).toEqual([{}, { 'system.energie.value': 0 }]);
+  });
+
+  it('G3: espoir target + unresolvable attacker — the espoir soak still lands (56 - 3 reduction = 53, espoir 15 absorbs all: {espoir: 15}, espoir 15->0, 38 stranded) and apply() double-writes the espoir payload, with ZERO queries; the guard return (damageKnight.js:134) skips ONLY the query — the unguarded path ends in its own unconditional `return;` at :143, so NEITHER twin ever reaches the armure/sante tracks (strict toEqual pins the absence of any armure/sante key)', async () => {
+    const { damage, actor } = unresolvableAttackerFixture('espoir');
+    await damage.calculate();
+    // No flush needed: the espoir block awaits fromUuid INLINE inside
+    // calculate(), so the guard has provably run by the time calculate()
+    // resolves and the zero-query assertion below is not a race.
+    expect(damage.actorStats.espoir).toBe(0);
+    expect(damage.damageRepartition).toEqual({ espoir: 15 });
+    expect(damage.damage).toBe(38);
+    expect(recordedQueries()).toEqual([]);
+    await damage.apply();
+    // INTENDED (author) double update repeats the first payload (no energie).
+    expect(actor.updates).toEqual([{ 'system.espoir.value': 0 }, { 'system.espoir.value': 0 }]);
   });
 });
