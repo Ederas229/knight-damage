@@ -6,6 +6,7 @@ const uuidRegistry = new Map();
 
 const messageCreations = [];
 const queryCalls = [];
+const dialogPrompts = [];
 
 let dialogPromptImpl = async () => {
   throw new Error('foundry.applications.api.DialogV2.prompt called without a programmed stub');
@@ -17,6 +18,17 @@ function isPlainObject(value) {
 
 // Minimal recursive merge matching the semantics the source relies on:
 // merge into plain objects, 2nd argument merged into the 1st, returns target.
+//
+// DIVERGENCE from the real foundry.utils.mergeObject (kept deliberately simple):
+// this stub does NOT implement Foundry v14 merge semantics. Missing:
+//   - dot-key expansion (e.g. { 'a.b': 1 } is stored as the literal key 'a.b',
+//     not merged into a.b);
+//   - throwing when target or source is not an object;
+//   - the special operator objects (foundry.utils.ForcedDeletion,
+//     foundry.utils.Replacement, and the @@modify/@@expand sentinels).
+// None of the source call sites (generateRecapMessage + generateReminderData)
+// use those features. If a future test needs them, extend this stub — do not
+// import the real one.
 function mergeObject(target, source) {
   if (source === undefined || source === null) return target;
   for (const [key, value] of Object.entries(source)) {
@@ -38,7 +50,10 @@ globalThis.foundry = {
   applications: {
     api: {
       DialogV2: {
-        prompt: (options) => dialogPromptImpl(options),
+        prompt: (options) => {
+          dialogPrompts.push(options);
+          return dialogPromptImpl(options);
+        },
       },
     },
   },
@@ -89,13 +104,29 @@ export function recordedQueries() {
   return [...queryCalls];
 }
 
+// The raw options object each DialogV2.prompt call received (in call order),
+// so tests can pin window.title / content of the real dialogs.
+export function recordedDialogPrompts() {
+  return [...dialogPrompts];
+}
+
 export function resetRecorders() {
   messageCreations.length = 0;
   queryCalls.length = 0;
+  dialogPrompts.length = 0;
 }
 
 export function setDialogPrompt(handler) {
   dialogPromptImpl = handler;
+}
+
+// Runs the REAL options.ok.callback(event, button) with a fake form button
+// (button.form.elements.value.valueAsNumber = valueAsNumber), so tests
+// exercise the production clamp/validation logic instead of programming a
+// result. The prompt promise resolves with whatever the callback returns.
+export function setDialogPromptCallback(valueAsNumber) {
+  dialogPromptImpl = async (options) =>
+    options.ok.callback({ type: 'click' }, { form: { elements: { value: { valueAsNumber } } } });
 }
 
 export function resetDialogPrompt() {

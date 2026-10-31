@@ -145,6 +145,32 @@ describe('vehicule', () => {
     expect(actor.updates[0]).toEqual({});
     expect(actor.updates[1]).toEqual({ 'system.energie.value': 9 });
   });
+
+  it('applyTraitCdf: CdF 10 vs penetrant 6 lowers effective CdF to 4, and the reduced CdF is subtracted AFTER the /10 colosse division (6 - 4 = 2 absorbed)', () => {
+    const { damage } = vehiculeFixture({
+      system: vehiculeSystem({ cdf: 10 }),
+      weaponRaw: ['penetrant 6'],
+      targetValue: 60,
+    });
+    damage.calculate();
+    expect(damage.effectiveStats.cdf).toBe(4);
+    // Without applyTraitCdf the subtraction would be 6 - 10 = -4 -> early
+    // return with no damage at all, so these values fail on that mutation.
+    expect(damage.actorStats.armure).toBe(28);
+    expect(damage.damageRepartition).toEqual({ armure: 2, passenger: 0 });
+  });
+
+  it('applyTraitCdf zeroing: CdF 4 <= penetrant 6 zeroes the effective CdF (full 6 after /10 reaches the armor)', () => {
+    const { damage } = vehiculeFixture({
+      system: vehiculeSystem({ cdf: 4 }),
+      weaponRaw: ['penetrant 6'],
+      targetValue: 60,
+    });
+    damage.calculate();
+    expect(damage.effectiveStats.cdf).toBe(0);
+    expect(damage.actorStats.armure).toBe(24);
+    expect(damage.damageRepartition).toEqual({ armure: 6, passenger: 1 });
+  });
 });
 
 describe('mechaarmure', () => {
@@ -204,5 +230,19 @@ describe('mechaarmure', () => {
     damage.calculate();
     expect(damage.actorStats.blindage).toBe(24);
     expect(damage.damageRepartition).toEqual({ blindage: 6, passenger: 0 });
+  });
+
+  it('applyTraitCdf: CdF 10 vs penetrant 6 lowers effective CdF to 4 before the subtraction (colosse 6 - 4 = 2 absorbed by the 30 blindage)', () => {
+    const { damage } = mechaFixture({
+      system: mechaSystem({ cdf: 10 }),
+      weaponRaw: ['penetrant 6'],
+      targetValue: 60,
+    });
+    damage.calculate();
+    expect(damage.effectiveStats.cdf).toBe(4);
+    // Without applyTraitCdf the subtraction would be 6 - 10 = -4 -> early
+    // return with an empty repartition, so these values fail on that mutation.
+    expect(damage.actorStats.blindage).toBe(28);
+    expect(damage.damageRepartition).toEqual({ blindage: 2, passenger: 0 });
   });
 });

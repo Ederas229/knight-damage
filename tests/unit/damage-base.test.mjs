@@ -59,6 +59,32 @@ describe('damage extraction from flags.knight.targets', () => {
     const { damage } = baseFixture({ targets: [{ id: 'someone-else', value: 99 }] });
     expect(damage.damage).toBe(0);
   });
+
+  it('with a two-entry targets list, picks the entry whose id matches whatever its position', () => {
+    const first = baseFixture({
+      targets: [
+        { id: 'token-def', value: 40 },
+        { id: 'other-token', value: 99 },
+      ],
+    });
+    expect(first.damage.damage).toBe(40);
+    const second = baseFixture({
+      targets: [
+        { id: 'other-token', value: 99 },
+        { id: 'token-def', value: 40 },
+      ],
+    });
+    expect(second.damage.damage).toBe(40);
+  });
+
+  it('ceil-vs-round discriminator: value 7 x mult 0.2 (= 1.4000000000000001 in floats) becomes Math.ceil 2, not Math.round 1', () => {
+    registerUuid('Actor.actor-atk', makeActor('pnj', {}, { id: 'actor-atk' }));
+    registerUuid(ATTACKER_UUID, { uuid: ATTACKER_UUID });
+    const token = makeToken(makeActor('knight', {}), { id: 'token-def' });
+    const message = makeKnightMessage({ targets: [{ id: 'token-def', value: 7 }] });
+    const damage = new DamageBase(token, message, 0.2, false);
+    expect(damage.damage).toBe(2);
+  });
 });
 
 describe('Débordement / Mode Oriflamme content fallback', () => {
@@ -112,6 +138,34 @@ describe('Débordement / Mode Oriflamme content fallback', () => {
     const message = makeKnightMessage({ content, targets: [] });
     new DamageBase(token, message, 1, false);
     expect(message.flags.knight.weapon.effets.raw).toEqual([]);
+  });
+
+  it('ceil-vs-round discriminator: Débordement 7 x mult 0.2 becomes Math.ceil 2, not Math.round 1 (same fix as the targets path)', () => {
+    const content = '<div>Dégâts</div><div>Débordement</div>\n<div>\n 7\n</div>';
+    registerUuid('Actor.actor-atk', makeActor('pnj', {}, { id: 'actor-atk' }));
+    registerUuid(ATTACKER_UUID, { uuid: ATTACKER_UUID });
+    const token = makeToken(makeActor('knight', {}), { id: 'token-def' });
+    const message = makeKnightMessage({ content, targets: [] });
+    const damage = new DamageBase(token, message, 0.2, false);
+    expect(damage.damage).toBe(2);
+  });
+
+  it('the Débordement auto-adds go into the message flag array, never back into the array the caller passed to makeKnightMessage', () => {
+    const content = '<div>Débordement</div>\n<div>\n 40\n</div>';
+    registerUuid('Actor.actor-atk', makeActor('pnj', {}, { id: 'actor-atk' }));
+    registerUuid(ATTACKER_UUID, { uuid: ATTACKER_UUID });
+    const token = makeToken(makeActor('knight', {}), { id: 'token-def' });
+    const callerArray = [];
+    const message = makeKnightMessage({
+      content,
+      targets: [],
+      weaponRaw: callerArray,
+      initiatorItems: [{ name: 'Ignore Armure' }],
+    });
+    new DamageBase(token, message, 1, false);
+    // makeKnightMessage cloned the array: the auto-add landed in the flag copy only.
+    expect(message.flags.knight.weapon.effets.raw).toEqual(['ignorearmure']);
+    expect(callerArray).toEqual([]);
   });
 });
 

@@ -88,22 +88,55 @@ export function makeKnightMessage({
   weaponRaw = [],
   targets = [],
 } = {}) {
+  // Shallow-copy the caller's arrays: the source MUTATES weapon.effets.raw
+  // (the Débordement path auto-adds ignorearmure/ignorechampdeforce/
+  // antivehicule via addWeaponEffects), so sharing the caller's array would
+  // leak those pushes back into module-level fixture constants. Item objects
+  // themselves are shared (they carry flag closures) but are never mutated
+  // structurally by the damage classes.
   return makeMessage({
     content,
     speaker: { scene, token: initiatorTokenId },
     flags: {
       knight: {
-        targets,
-        weapon: { effets: { raw: weaponRaw } },
+        targets: [...targets],
+        weapon: { effets: { raw: [...weaponRaw] } },
         actor: {
           _id: initiatorActorId,
           type: initiatorType,
-          items: initiatorItems,
+          items: [...initiatorItems],
           system: { origin: initiatorSystemOrigin },
         },
       },
     },
   });
+}
+
+// Recorder for the jQuery-like `html` argument of revertDamage: the source
+// calls html.find(sel).css(...), html.find(sel).remove() and
+// html.find('.message-content').html(). Every selector/action is recorded;
+// html() returns the canned messageContent string.
+export function makeHtmlRecorder({ messageContent = '' } = {}) {
+  const calls = [];
+  const chainFor = (selector) => ({
+    css(property, value) {
+      calls.push({ selector, action: 'css', property, value });
+      return this;
+    },
+    remove() {
+      calls.push({ selector, action: 'remove' });
+      return this;
+    },
+    html() {
+      calls.push({ selector, action: 'html' });
+      return messageContent;
+    },
+  });
+  return {
+    calls,
+    selectorsUsed: () => calls.map((c) => c.selector),
+    find: (selector) => chainFor(selector),
+  };
 }
 
 // The knight chat HTML fragment extractTraitValue regexes over:
