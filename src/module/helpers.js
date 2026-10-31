@@ -12,7 +12,8 @@ export function log(...args) {
  */
 export function getTraitValue(trait) {
   const array = trait.split(' ');
-  return Number(array[array.length - 1]);
+  const value = Number(array[array.length - 1]);
+  return Number.isFinite(value) ? value : 0; // malformed entry (sans nombre) -> neutre au lieu de NaN
 }
 
 /**
@@ -25,8 +26,9 @@ export function extractTraitValue(message, trait) {
   const number = message.content.match(
     new RegExp(`<span class="label">${trait}<\\/span>\\s*<span class="value">\\+\\d*`),
   );
-  if (!number) return;
-  return Number(number[0].match(new RegExp(`\\d+`))[0]);
+  if (!number) return 0; // span absent du message -> trait neutre au lieu de NaN en aval
+  const digits = number[0].match(new RegExp(`\\d+`));
+  return digits ? Number(digits[0]) : 0; // signe « + » sans chiffre -> pareillement neutre
 }
 
 /**

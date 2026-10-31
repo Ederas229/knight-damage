@@ -50,8 +50,8 @@ export class DamageBase {
       const matchOri = message.content.match(regexOri);
 
       if (matchDebordement || matchOri) {
-        const number = message.content.match(new RegExp(`>\\n\\s*\\d+\\n\\s*<`));
-        this.damage = Math.ceil(Number(number[0].match(new RegExp(`\\d+`))[0]) * mult);
+        const number = message.content.match(new RegExp(`>\\r?\\n\\s*\\d+\\r?\\n\\s*<`));
+        if (number) this.damage = Math.ceil(Number(number[0].match(new RegExp(`\\d+`))[0]) * mult);
       }
 
       if (matchDebordement) {
