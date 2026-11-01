@@ -11,7 +11,7 @@ CI order becomes `lint -> test:unit -> build`. The e2e suite stays local (`test:
 
 > **Status (2026-10-31): COMPLETE.** The suite is in `tests/unit/` (7 files, 145 tests, runs in CI after lint and in the husky pre-commit hook). The review-5 follow-up batch is pinned too: the four uuid-resolution guards committed in `5fbba11` (G1-G4), the destructeur/cuir-du-taureau gate positive control, vehicule/mecha trait non-application, the mecha energie path, and the `createDamageObject` dispatch + revert-click handler via the `renderChatMessageHTML` registration.
 
-The damage classes touch **no Foundry APIs at module top-level** — `foundry.*`, `game`, `ChatMessage`, `fromUuidSync` are only called inside methods — so they are unit-testable with plain object doubles. (Update since review 5: importing the *entrypoint* is also unit-safe — its only top-level effect is `Hooks.once/on` registration, which the stubs record; `tests/unit/entrypoint-dispatch.test.mjs` uses that.)
+The damage classes touch **no Foundry APIs at module top-level** — `foundry.*`, `game`, `ChatMessage`, `fromUuidSync` are only called inside methods — so they are unit-testable with plain object doubles. (Update since review 5: importing the _entrypoint_ is also unit-safe — its only top-level effect is `Hooks.once/on` registration, which the stubs record; `tests/unit/entrypoint-dispatch.test.mjs` uses that.)
 
 1. `npm i -D vitest`; scripts:
    ```json
@@ -25,11 +25,11 @@ The damage classes touch **no Foundry APIs at module top-level** — `foundry.*`
    - `makeMessage({ content, flags })` — plain `{ content, flags, getFlag, update }`; **build flags from the same JSON fixtures as e2e** (`flags.knight.targets/weapon/actor`), so unit and e2e agree on the system contract.
    - `makeActor(type, systemTree, items, flags)` — nested `system.*` tree exactly as the system stores it, `items.contents`, `getFlag/setFlag`, `temporaryEffects`, `update()` recording calls, `uuid`.
    - `makeToken(actor)` — the dispatch passes `e.document` (a TokenDocument with `.actor`); the JSDoc in `createDamageObject` says otherwise. Construct with the token-document shape and pin it in a test.
-4. **Characterization rule**: pin *current* behavior first (including suspected bugs below); each pinned oddity gets a `// CHARACTERIZATION:` comment. Fixes come later as deliberate commits with tests updated.
+4. **Characterization rule**: pin _current_ behavior first (including suspected bugs below); each pinned oddity gets a `// CHARACTERIZATION:` comment. Fixes come later as deliberate commits with tests updated.
 
 Test targets, per file:
 
-- **Standard fixtures (use these values everywhere unless a case needs otherwise):** weapon `weapon.effets.raw` containing `percearmure 40` + `penetrant 6`; victim knight with **normal `armure` 100**, CdF fixtures straddling 6 (`cdf 4` → CdF fully zeroed by pénétrant; `cdf 10` → effective CdF 4 via `applyTraitCdf`). Against *full* 100 armor, perce-armure 40 changes nothing: `100 ≤ 40` is false so `isArmorIgnored()` stays false, and the subtractive `applyTraitArmure()` is commented out in `DamageKnight.calculate` and uncalled in vehicule/mecha — pin that no-op. The armor-**bypass** branch (`isArmorIgnored()` true) requires a **worn-armor fixture** (`armure` ≤ 40, e.g. 30): there the armure track is skipped and post-CdF damage goes straight to sante math. `cuirDuTaureau` and `instinct-du-loup → percearmure: 'active'` are the two documented flips on that worn-armor fixture — each needs a paired case (taureau re-engages the armure track; loup zeroes `perceArmure` so full-armor behavior is restored for the worn victim).
+- **Standard fixtures (use these values everywhere unless a case needs otherwise):** weapon `weapon.effets.raw` containing `percearmure 40` + `penetrant 6`; victim knight with **normal `armure` 100**, CdF fixtures straddling 6 (`cdf 4` → CdF fully zeroed by pénétrant; `cdf 10` → effective CdF 4 via `applyTraitCdf`). Against _full_ 100 armor, perce-armure 40 changes nothing: `100 ≤ 40` is false so `isArmorIgnored()` stays false, and the subtractive `applyTraitArmure()` is commented out in `DamageKnight.calculate` and uncalled in vehicule/mecha — pin that no-op. The armor-**bypass** branch (`isArmorIgnored()` true) requires a **worn-armor fixture** (`armure` ≤ 40, e.g. 30): there the armure track is skipped and post-CdF damage goes straight to sante math. `cuirDuTaureau` and `instinct-du-loup → percearmure: 'active'` are the two documented flips on that worn-armor fixture — each needs a paired case (taureau re-engages the armure track; loup zeroes `perceArmure` so full-armor behavior is restored for the worn victim).
 - `helpers.test.mjs` — `getTraitValue` (e.g. `'Perce-armure 40'` → 40, `'Pénétrant 6'` → 6), `extractTraitValue` (the French HTML `<span class="label">…<span class="value">+N` regex), `hasStatusEffect`, `generateReminderData` (uuid `.`→`_` key encoding, revert negation, accumulation).
 - `damage-base.test.mjs` — damage extraction: `flags.knight.targets[].value × mult` with `Math.ceil`; the `Débordement`/`Mode Oriflamme` content-regex fallback (which also auto-adds `ignorearmure`/`ignorechampdeforce`/`antivehicule` to `weapon.effets.raw` when the initiator has the matching item); `percearmure 40`/`penetrant 6` parsed from `weapon.effets.raw` into `perceArmure`/`penetrant`; `calculateDamageStat` overflow arithmetic; `calculateArmureVersSante` tranche 5; /10 colosse with `antivehicule` defeating it; `apply()` update-payload mapping.
 - `damage-knight.test.mjs` — order Egide → CdF → armure → guardian branch (`armure <= 0`, not `folde`, `wear != 'guardian'`, `apply-guardian-cdf` status) → sante; `infatigable` skipping the armure→sante carry; `cuirDuTaureau` forcing armor despite ignorearmure; `destructeur`/`meurtrier` insertion points; espoir path with `system.espoir.reduction` floor 0; `instinct-du-loup` item flag neutralizing `percearmure`/`ignorearmure`/`ignorecdf`; `Rire du corbeau` energie split (DialogV2 stubbed); energie/espoir reminder `user.query` payload (stub `game.users.activeGM.query`).
@@ -38,7 +38,7 @@ Test targets, per file:
 
 Known code quirks the unit suite must pin (verify, don't silently "fix"):
 
-- ~~`damageVehicule.js` missing `()` on `isColosseApplied`~~ — **fixed** (both call sites now invoke it). Phase U should instead *lock the fix in*: a test with an `antivehicule` attack vs a vehicule with `armure > 0` must show Destructeur applied via the armor branch (`!isColosseApplied()` true), and must not be gated on the `/10` number; plus the normal non-antivehicule case keeping line-19 gating. This is the regression the bug hid for months.
+- ~~`damageVehicule.js` missing `()` on `isColosseApplied`~~ — **fixed** (both call sites now invoke it). Phase U should instead _lock the fix in_: a test with an `antivehicule` attack vs a vehicule with `armure > 0` must show Destructeur applied via the armor branch (`!isColosseApplied()` true), and must not be gated on the `/10` number; plus the normal non-antivehicule case keeping line-19 gating. This is the regression the bug hid for months.
 - `DamageKnight.revertDamage` restores stats via `setTimeout(100/101)` — use `vi.useFakeTimers()` + `vi.advanceTimersByTime()`; the base `revertDamage` has no timers.
 - `apply()` maps `cohesion` damage onto `system.sante.value` (`damageBase.js:286`) — assert the exact update key the current code emits.
 - `askModifier`/`askDamageEnergie` need `foundry.applications.api.DialogV2.prompt` stubbed to resolve values; `switchArmure` (sheet DOM + more timers) stays **out of unit scope** — e2e only.
@@ -51,15 +51,62 @@ Known honest limits of the unit layer (review 5): the stubbed `actor.update` per
 
 ## Phase 0 — E2E prerequisites (verify by hand first)
 
-- [ ] Local Foundry VTT install with a valid license, **v14**, and the **`knight` system installed** in `Data/systems/knight` (the module hard-depends on the system's chat-message flags — see Risks).
-- [ ] Unpack Foundry's **Node.js server** as `FoundryVTT-Node/` inside the framework package dir (not in git; download from foundryvtt.com).
-- [ ] A manually authored **test world** (e.g. `knight-damage-test`) with one scene containing:
-  - a `pnj` attacker token (damage source),
-  - a `knight` victim token with known `armure` (**normal 100**) / `champDeForce` / `egide` / guardian gear / `sante` / `espoir` / `energie`,
-  - a `vehicule` victim token (blindage/cohesion, resilience stat),
-  - a `mechaarmure` victim token.
-  Token display names are used by `selectTokensByName`, so keep them stable and ASCII.
-- [ ] Node 18+ (repo uses `lts/*`, CI uses 20).
+> **Status (2026-11-01): 3/4 boxes verified and the test world created; the `FoundryVTT-Node/` download stays manual.** Machine-specific locations (Foundry data root, framework clone path) deliberately stay OUT of this doc — resolve them per machine (the gitignored `foundryconfig.json` carries the local data path). Fixture expectations below are portable.
+
+- [x] Local Foundry VTT install with a valid license, **v14**, and the **`knight` system installed** in `Data/systems/knight` (the module hard-depends on the system's chat-message flags — see Risks).
+  - Verified on a **portable** install (user-data root = install root) at core **14.369** (`App/resources/app/package.json` version `14.369.0`). `Config/license.json` present and activated (encrypted payload + signature present; nothing sensitive in this doc).
+  - `knight` **3.58.38** installed (`compatibility: min 13 / verified 14`). Actor types in `system.json` `documentTypes.Actor`: `knight`, `ia`, `pnj`, `creature`, `bande`, `vehicule`, `mechaarmure` — `pnj` is the module's attacker type; `createDamageObject` returns no handler for it.
+  - **Hard dependency found:** the knight system's `relationships.requires` names the **`socketlib`** module (installed, v1.1.4) — it must be active in the test world. `knight-compendium` is installed but _not_ required; it stays inactive.
+  - Caveat seen on the verification machine: `Data/modules/knight-damage` may be a **symlink** (leftover `npm run link-project`) pointing at a local checkout's `dist/`. Phase 1's `tools/copy-dist-to-foundry.mjs` must replace it with a real file copy (recursive copies through symlinks are the risky path; linking needs admin).
+- [ ] Unpack Foundry's **Node.js server** as `FoundryVTT-Node/` inside the framework package dir (not in git; download from foundryvtt.com). **Manual — still pending.** Electron/portable archives do NOT count (they bundle platform-specific native binaries, unusable headless). Steps:
+  1. Log in at <https://foundryvtt.com/download/> → download the **Node.js** build for v14 (account-gated; nothing in this repo may automate it).
+  2. Unpack it flat into `<sibling>/foundryvtt-test-framework/FoundryVTT-Node/` — the framework's config default and `runSetup` expect it at the package root, and it spawns `node main.js --dataPath=…` with `cwd = foundryNodePath`. Confirm after unpacking that `main.js` sits at the `FoundryVTT-Node/` root (non-Node archives nest it under `resources/app/`; the Node zip unpacks flat).
+  3. Keep it out of git and out of `node_modules` (see style rules below).
+- [x] A manually authored **test world** — created 2026-11-01 in the local data path at `Data/worlds/knight-damage-test/` (details in the fixture subsections below).
+- [x] Node 18+ — verified at **v24** (repo `lts/*`, CI 20).
+
+### World fixture: `knight-damage-test` (knight 3.58.38, core 14.369)
+
+Layout (v14 stores world documents as one **LevelDB per collection** under `data/<collection>/`; the folder is seeded with legacy NeDB files — newline-delimited JSON — which v14's `_migrateNEDBToLevelDB` migrates automatically on first connect, so the whole world is hand-authorable text):
+
+```
+world.json                      knight-pinned, coreVersion 14.369, compatibility {minimum "14", verified "14.369"}
+data/actors.db                  NeDB: 4 actors
+data/scenes.db                  NeDB: 1 scene (embedded levels+tokens inline, v12-style — migration writes sublevels)
+data/settings.db                NeDB: core.moduleConfiguration = {"socketlib": true, "knight-damage": true}
+```
+
+No `users.db`: with no GM user, Foundry auto-creates a passwordless **`Gamemaster`** at launch — exactly the framework's default `loginUser`. v14 world.json has **no `modules` field** (module activation lives only in the `core.moduleConfiguration` setting row above). Every document `_id` must match `/^[a-zA-Z0-9]{16}$/` (Foundry `isValidId`), so readable labels live in `name`, not `_id`; ids below are fixed and stable.
+
+Actors (stats mirror the unit-suite standard fixture `knightSystem()` in `tests/unit/support/knight-fixtures.mjs`; each stat was written as `value = base = max` so the knight system's prepare/derived recalculation cannot drift the fixtures):
+
+| Actor `name`   | type          | `_id`              | fixture stats                                                                                                                                                                                                               |
+| -------------- | ------------- | ------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `atk-pnj`      | `pnj`         | `kdtAtkPnjAAAAAAA` | damage _source_ only: sante 10, armure 0, energie 12                                                                                                                                                                        |
+| `vic-knight`   | `knight`      | `kdtVicKnightAAAA` | **armure 100, CdF 10, egide 0, guardian gear (armure 15 / CdF 5 via `system.equipements.guardian.*`), sante 20, espoir 15 with `espoir.reduction` 3, energie 12, `wear` `"normal"`** — exactly the Phase U standard fixture |
+| `vic-vehicule` | `vehicule`    | `kdtVicVehiculeAA` | **armure 30** (Phase 4 erratum: `system.armure`, not `blindage`), CdF 0, energie 12, sante 10, equipage 1/2                                                                                                                 |
+| `vic-mecha`    | `mechaarmure` | `kdtVicMechaAAAAA` | **blindage 30, resilience 3, CdF 0, energie 12, sante 20**                                                                                                                                                                  |
+
+Schema caveat for Phase 4–6 authors: `resilience`/`cohesion` from the old Phase-0 wording are **not top-level system fields** for these actor types in knight 3.58.38 (`cohesion` exists only on items like armure-legende; vehicule has no `resilience` at all — its colosse `/10` is type-gated, `isColosseApplied()` is always true for `vehicule`). Mecha _does_ have `system.resilience.{value,base,max}`. The "cohesion" pool in the module is a repartition key that `apply()` writes onto `system.sante.value` (pinned INTENDED in the unit suite), so the victims pin **sante** instead. `wear: "normal"` is a plain string field (system default `"tenueCivile"`, no enum) — the module only compares `wear != 'guardian'`, so the unit fixture value is schema-legal.
+
+Scene `kdt-main` (`_id kdtSceneMainAAAA`): 4000×3000 px, grid size 100 px with the knight system's 5 m distance, `active: true`, no background image (null), default level `defaultLevel0000` (v14.369 scenes/tokens use `levels`). Four **linked** tokens (`actorLink: true` + `actorId`), display `name`s ASCII-stable for `selectTokensByName`:
+
+| Token `name`   | `_id`              | token `actorId`    | x, y (px)  | w×h (grid) |
+| -------------- | ------------------ | ------------------ | ---------- | ---------- |
+| `atk-pnj`      | `tkAtkPnjAAAAAAAA` | `kdtAtkPnjAAAAAAA` | 1000, 1000 | 2×2        |
+| `vic-knight`   | `tkVicKnightAAAAA` | `kdtVicKnightAAAA` | 1300, 1000 | 1×2        |
+| `vic-vehicule` | `tkVicVehiculeAAA` | `tkVicVehiculeAA`  | 1600, 1000 | 3×2        |
+| `vic-mecha`    | `tkVicMechaAAAAAA` | `kdtVicMechaAAAAA` | 1900, 1000 | 2×2        |
+
+**Linked-vs-unlinked adjudication:** tokens are _linked_. Existing v14 worlds built by other systems (pf2e notably) use unlinked tokens with `delta`s, but that is a pf2e convention; it breaks this module's and the plan's assumptions instead — Phase 3's `game.actors.get(actorId)` sees only _world_ actors (unlinked tokens yield synthetic delta actors absent from `game.actors`), and `DamageBase`'s `fromUuidSync('Actor.' + flags.knight.actor._id)` fallback plus flag keys `Scene_<scene>.Token_<token>` need stable world-level actor/token ids anyway. With `actorLink: true`, `token.actor === game.actors.get(actorId)` and every uuid the module builds (`Scene.kdtSceneMainAAAA.Token.tkVicKnightAAAAA`) resolves.
+
+All four `.db`/`.json` files parse with `JSON.parse`, load through the exact `nedb-promises` code path Foundry's migration uses, pass the `_id` regex, and the scene/setting key sets match reference v14 documents dumped read-only from an existing v14 world's LevelDB; tokens omit only keys that carry schema defaults (`disposition`, bars, light/sight, …).
+
+### Framework clone + Phase 1 assumption verification (2026-11-01)
+
+Cloned (public repo, not installed) as the sibling the plan's `file:../foundryvtt-test-framework` resolves to — clone location is machine-local; keep ONE canonical copy next to whichever checkout runs the suite. Verified at commit `f455406e1433b7fc3b89d6d9e5cb840e1d36d8bb` (2026-05-24), package version **2.0.0**, dep `playwright ^1.49`.
+
+Checked against the actual sources (plan claim → verdict): `waitFor(fn, timeout, ...args)` trailing-args passing → **correct** (`src/framework.mjs:67`, `src/helpers.mjs:40` `buildEvaluator`: 0/1 args pass through `page.evaluate`, ≥2 args are stringified and re-`eval`'d page-side to spread them back); stringified-function/closure-leak rule and swallowed predicate errors → **correct** (CLAUDE.md documents the swallow); `executeInFoundry(fn, ...args)`, `queueDiceOverride(faces, count, value)` (FIFO, `null` count wildcard, success-counting dice skipped, queue owned by the extension), `waitForChatMessage`, `clickInLastChatMessage*`, `screenshot` → **all exist** as instance methods; `start/stop` → **class-based**: `new FoundryTestFramework(config)`, named import `{ FoundryTestFramework }` from `'foundryvtt-test-framework'` — the plan's `fw` shorthand implies an instance, keep it that way in Phase 1; `runSetup(config)` from `'foundryvtt-test-framework/setup'` → exists, copies license/systems/modules/worlds, **missing assets warn only** (plan's warning is right); `FoundryVTT-Node/` at the package dir with the server spawned as `node main.js --dataPath=… [--port=…] [--world=…]` → correct (entry filename `main.js` confirmed by the Linux archive; verify flat unpack); `diceOverrideExtensionPath` → `<pkg>/dice-override` (MV3, matches `http://localhost/*` only) → correct; extension patch target `Roll.prototype._evaluateASTAsync` → **exists in core 14.369** (`client/dice/roll.mjs:355`), so dice override works on v14; click helpers' scope `.chat-scroll li.chat-message` → **valid v14 DOM** (chat message root is literally `li.chat-message`, `templates/sidebar/chat-message.hbs:1`; core chat tab queries `.chat-scroll`, `client/applications/sidebar/tabs/chat.mjs:747`); `submitDialog()` selector `footer.form-footer button[type='submit']` → **matches v14 DialogV2** (`client/applications/api/dialog.mjs:211` renders `<footer class="form-footer">` and buttons default to `type="submit"`) — Phase 3 case 8 is safe; `selectTokensByName(names)` calls `token.setTarget(true, …)` → **targets only, not controlled** — the Phase 3 gotcha is confirmed, control tokens explicitly. No v14-incompatible assumption found in the framework itself.
 
 ## Phase 1 — Scaffold (make a smoke test pass)
 
@@ -79,7 +126,7 @@ Known honest limits of the unit layer (review 5): the stubbed `actor.update` per
    };
    ```
 3. `tests/e2e/setup.mjs` → `runSetup(config)` (copies license from `sourceDataPath/Config/`).
-4. **Build-then-copy flow**: `modulesToCopy` copies from `Data/modules/knight-damage`, so the module must be current in the *source* data folder before `setup:e2e`. Add scripts:
+4. **Build-then-copy flow**: `modulesToCopy` copies from `Data/modules/knight-damage`, so the module must be current in the _source_ data folder before `setup:e2e`. Add scripts:
    ```json
    "prepare:e2e": "npm run build && node tools/copy-dist-to-foundry.mjs",
    "setup:e2e": "node tests/e2e/setup.mjs",
@@ -94,16 +141,16 @@ Known honest limits of the unit layer (review 5): the stubbed `actor.update` per
 
 Acceptance: `npm run prepare:e2e && npm run setup:e2e && npm run test:e2e` green.
 
-## Phase 2 — Getting a *knight* damage message into chat (shared fixture problem)
+## Phase 2 — Getting a _knight_ damage message into chat (shared fixture problem)
 
 Every core feature keys off the knight system's message output: `flags.knight.targets[].value`, `flags.knight.weapon.effets.raw`, `flags.knight.actor.*`, and regexes over French HTML (`Dégâts</div>`, `Débordement</div>`). Two ways to produce a message:
 
 - **A. Real attack rolls** (end-to-end, but couples tests to the knight system's UI): GM attack action from the attacker token, `queueDiceOverride(faces, count, value)` to pin every die in the pool (FIFO by die type/count — order matters, knight rolls consume pools in system order).
 - **B. Recorded fixtures** (recommended for logic tests): record a real message once — run a live attack manually, then dump it:
   ```js
-  await fw.executeInFoundry(() => game.messages.contents.at(-1).toObject(true))
+  await fw.executeInFoundry(() => game.messages.contents.at(-1).toObject(true));
   ```
-  save to `tests/e2e/fixtures/*.json`, and in tests recreate with `ChatMessage.create(fixture)` (removing `_id`/`id`/`timestamp`). **Record the reference weapon with `percearmure 40` + `penetrant 6` effects** so the recorded fixture *is* the standard weapon used across unit and e2e suites. Re-record fixtures after any knight system upgrade. **These fixture JSONs double as input for the unit suite's `makeMessage`** (Phase U) — one source of truth for the knight message contract.
+  save to `tests/e2e/fixtures/*.json`, and in tests recreate with `ChatMessage.create(fixture)` (removing `_id`/`id`/`timestamp`). **Record the reference weapon with `percearmure 40` + `penetrant 6` effects** so the recorded fixture _is_ the standard weapon used across unit and e2e suites. Re-record fixtures after any knight system upgrade. **These fixture JSONs double as input for the unit suite's `makeMessage`** (Phase U) — one source of truth for the knight message contract.
 
 Use A for one integration test per actor type; use B for the combinatorics (traits, multiplier, armor interactions).
 
@@ -133,7 +180,7 @@ const stats = await fw.waitFor(
 );
 ```
 
-> **Gotcha:** `handleClickApplyDamage` early-returns unless `canvas.activeLayer.controlled.length > 0`. The framework's `selectTokensByName` sets *targets*, which is not the same as *controlled/selected* — verify which one it leaves behind; if it's only targeting, control tokens explicitly as above.
+> **Gotcha:** `handleClickApplyDamage` early-returns unless `canvas.activeLayer.controlled.length > 0`. The framework's `selectTokensByName` sets _targets_, which is not the same as _controlled/selected_ — verify which one it leaves behind; if it's only targeting, control tokens explicitly as above.
 
 Test cases (knight victim, DamageKnight math order: Egide → CdF → … → armure→sante /5):
 
@@ -162,18 +209,18 @@ Test cases (knight victim, DamageKnight math order: Egide → CdF → … → ar
 ## Phase 6 — Hook & sheet edge cases
 
 - **Anti-anathème**: give the victim the `anti-anatheme` status; update an attack message whose `weapon.effets.raw` lacks `antianatheme` → after update, raw contains it (`preUpdateChatMessage`).
-- **Instinct du loup**: open the knight actor's `Instinct du loup` *module-item* sheet (hook is `renderModuleSheet` — a knight system item type, not a Foundry module) → injected buttons exist; click one → item flag `knight-damage.loup.<option>` toggles `'active'`/`'unactive'` (flag value is literally the button's className — assert exact strings).
-- **Instinct du loup damage interaction**: with `percearmure: 'active'` flag, an attack *against* that knight still has its perce-armure neutralized (`applyInstinctDuLoup` runs first in `calculate`).
+- **Instinct du loup**: open the knight actor's `Instinct du loup` _module-item_ sheet (hook is `renderModuleSheet` — a knight system item type, not a Foundry module) → injected buttons exist; click one → item flag `knight-damage.loup.<option>` toggles `'active'`/`'unactive'` (flag value is literally the button's className — assert exact strings).
+- **Instinct du loup damage interaction**: with `percearmure: 'active'` flag, an attack _against_ that knight still has its perce-armure neutralized (`applyInstinctDuLoup` runs first in `calculate`).
 - (Optional) `shrine` / `shrine-ameliore` status effects add +6 / +8 to `system.champDeForce.base` (mode 2) — assert via preparedCdF after granting the effect.
 
 ## E2E test style rules (from the framework's README + CLAUDE.md)
 
 - `waitFor` predicates run **in the browser** and must return plain serializable objects — never Foundry Documents; look docs up by id/uuid inside the page function.
 - **Stringify rule:** every function handed to `executeInFoundry` / `waitFor` / `waitForChatMessage` is stringified and re-evaluated page-side (`helpers.mjs:buildEvaluator`). No closures over test variables — pass values as trailing args. Worse, predicate exceptions are **swallowed as "not ready yet"**: a `ReferenceError` from a leaked closure variable surfaces as a full-timeout hang with no error. When a `waitFor` mysteriously times out, suspect a closure leak first.
-- **Stale-code trap**: the module under test is a *copy* inside `testDataPath`. After any `src/` change, re-run `prepare:e2e && setup:e2e` (re-copying overwrites) before `test:e2e`; never debug a behavior change against a non-rebuilt copy. `runSetup` only *warns* about missing assets, so check its log — a typo'd module id won't abort it.
+- **Stale-code trap**: the module under test is a _copy_ inside `testDataPath`. After any `src/` change, re-run `prepare:e2e && setup:e2e` (re-copying overwrites) before `test:e2e`; never debug a behavior change against a non-rebuilt copy. `runSetup` only _warns_ about missing assets, so check its log — a typo'd module id won't abort it.
 - Install the framework as a **sibling clone** consumed via `file:../foundryvtt-test-framework` (this is what `config.example.mjs`'s `../../../foundryvtt-test-framework/...` paths assume): `FoundryVTT-Node/` lives inside the package dir, and installing into `node_modules` means every `npm ci` wipes your manually downloaded server.
 - Click helpers already `_pause(100)` internally — don't add extra sleeps; the knight module's injected buttons live in the last `li.chat-message` under `.chat-scroll`, which is exactly what `clickInLastChatMessage*` scopes to.
-- Dice override mechanics: FIFO match on `faces` + `count` (`null` count = wildcard); the extension is inert outside `http://localhost`; **success-counting dice (`r.count !== undefined`) are intentionally *not* overridable** — if a knight roll form counts successes instead of summing, it can't be pinned this way (note it and use fixture messages for that path). Don't read `window.__diceOverrideQueue` back from Playwright — the extension owns it.
+- Dice override mechanics: FIFO match on `faces` + `count` (`null` count = wildcard); the extension is inert outside `http://localhost`; **success-counting dice (`r.count !== undefined`) are intentionally _not_ overridable** — if a knight roll form counts successes instead of summing, it can't be pinned this way (note it and use fixture messages for that path). Don't read `window.__diceOverrideQueue` back from Playwright — the extension owns it.
 - One `fw.start()`/`fw.stop()` per test file (start is slow: server + browser + world load). Group cases per file; reset state between cases (heal the victim, delete recap messages, clear flags via `executeInFoundry` helpers).
 - Prefer `waitFor` over fixed sleeps; on failure call `fw.screenshot('case-name.png')` then `fw.stop()` — screenshots land in `test-data/screenshots/` (gitignore it).
 - Keep French strings in assertions (`'Dégâts'`, `'Récapitulatif des dégâts'`, `'Normal'`) — they are load-bearing selectors, not incidental.
