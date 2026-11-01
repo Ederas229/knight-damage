@@ -2,17 +2,47 @@
 // the consumer test files (damage-knight / damage-revert / damage-vehicule-mecha
 // / recap-message / damage-base) — same values, same semantics, zero
 // assertion changes in the refactor commit.
+//
+// Phase-2 merge (shared fixture problem): the MESSAGE side of the standard
+// fixture is no longer hand-built — STANDARD_RAW and the standard knight
+// message baseline are sourced from the recorded live knight-system attack
+// message in tests/e2e/fixtures/ (see tests/e2e/record-fixtures.mjs), so unit
+// and e2e suites now share ONE source of truth for the knight message
+// contract. The ACTOR side (knightSystem()) stays hand-parameterized for now:
+// the recorded message embeds the full live actor blob (aspects/derived data),
+// which would drown the per-case stat knobs the damage tests twist — see the
+// Phase 2 status block in docs/testing-plan.md.
 
 import { registerUuid } from './foundry-globals.mjs';
 import { makeActor } from './doubles.mjs';
+import { loadRecordedFixture, STANDARD_FIXTURE_NAME } from '../../e2e/support/fixture-store.mjs';
 
 export const ATTACKER_UUID = 'Scene.scene-1.Token.token-atk';
 export const VICTIM_UUID = 'Scene.scene-1.Token.token-def.Actor.actor-def';
 
+// Recorded contract: the live attack fixture (metadata header + stripped message).
+const RECORDED = loadRecordedFixture(STANDARD_FIXTURE_NAME);
+export const RECORDED_FIXTURE_META = RECORDED.meta;
+const RECORDED_MESSAGE = RECORDED.message;
+
+/**
+ * Deep-cloned copy of the recorded real knight damage message (ChatMessage source
+ * object, metadata + volatiles stripped): the shared baseline for "a standard pnj
+ * attack message" in BOTH suites. E2E replays it via ChatMessage.create; unit tests
+ * feed its flags/content into makeMessage/makeKnightMessage-shaped doubles. Always
+ * hand out clones — the source MUTATES weapon.effets.raw (see doubles.mjs).
+ */
+export function standardKnightMessageFixture() {
+  return structuredClone(RECORDED_MESSAGE);
+}
+
 // Frozen so any source-side push into weapon.effets.raw that ever bypassed
 // the makeKnightMessage copy would throw here instead of silently leaking
-// into every later fixture using this constant.
-export const STANDARD_RAW = Object.freeze(['percearmure 40', 'penetrant 6']);
+// into every later fixture using this constant. Now DERIVED from the recorded
+// fixture (fixture-contract.test.mjs pins it equals the pre-recording standard
+// ['percearmure 40', 'penetrant 6'] — if a re-record ever drifts it, that test
+// fails instead of quietly redefining the standard).
+export const STANDARD_RAW = Object.freeze([...RECORDED_MESSAGE.flags.knight.weapon.effets.raw]);
 
 // Standard fixture per the test plan: full 100 armor, CdF 10 straddling
 // penetrant 6, guardian gear, sante 20, espoir 15 (reduction 3), energie 12.

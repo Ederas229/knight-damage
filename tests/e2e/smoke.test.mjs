@@ -5,98 +5,22 @@
 //   3. CONFIG.queries['knight-damage.addReminder'] is registered.
 //
 // Run with `npm run test:e2e` AFTER `npm run prepare:e2e && npm run setup:e2e`.
+// The --preserve-symlinks respawn guard and the three framework v2.0.0 workarounds now live in
+// tests/e2e/support/framework.mjs (shared with record-fixtures.mjs / fixtures.test.mjs).
 
-import { spawn } from 'node:child_process';
 import config from './config.mjs';
+import { loadFramework, respawnPreservingSymlinks } from './support/framework.mjs';
 
 /* global process */
 
-// npm installs the `file:../foundryvtt-test-framework` devDependency as a Windows JUNCTION into the
-// sibling clone. Node realpaths junctioned module paths by default, so the framework's own
-// `playwright` import would resolve relative to the CLONE (no node_modules up its tree) and fail.
-// Respawn this script once with --preserve-symlinks so resolution stays inside
-// node_modules/foundryvtt-test-framework and finds the repo-hoisted playwright devDependency.
 // NOTE: the framework import must stay DYNAMIC (inside the preserved branch) — a static import at
 // this file's top would be evaluated by the initial, un-preserved process before the respawn runs.
-if (!process.env.KDT_E2E_PRESERVE_SYMLINKS) {
-  const child = spawn(process.execPath, ['--preserve-symlinks', ...process.argv.slice(1)], {
-    stdio: 'inherit',
-    env: { ...process.env, KDT_E2E_PRESERVE_SYMLINKS: '1' },
-  });
-  child.on('exit', (code) => process.exit(code ?? 1));
+if (respawnPreservingSymlinks()) {
+  // Parent: the symlink-preserving child inherited stdio and carries the run.
 } else {
-  const { FoundryTestFramework } = await import('foundryvtt-test-framework');
+  const Framework = await loadFramework();
 
-  // Upstream _spawnServer() passes only --dataPath/--port/--world. On this network the v14 server's
-  // external IP-discovery probes never settle, so Express.addresses stays null and the socket JOIN
-  // payload crashes server-side in getInvitationLinks() ("Cannot read properties of null (reading
-  // 'local')") — the client then hangs on the black loading screen forever. --noipdiscovery=true
-  // makes getIPAddresses() return a local-only address set, which fixes the join handshake.
-  const SmokeFramework = class extends FoundryTestFramework {
-    _spawnServer() {
-      const { foundryNodePath, testDataPath, foundryServerPort } = this.config;
-      const args = ['main.js', `--dataPath=${testDataPath}`];
-      if (foundryServerPort !== 30000) args.push(`--port=${foundryServerPort}`);
-      if (this.config.world) args.push(`--world=${this.config.world}`);
-      args.push('--noipdiscovery=true');
-
-      console.log(`[foundryvtt-test-framework] Starting Foundry server on port ${foundryServerPort ?? 30000}...`);
-      this.serverProcess = spawn('node', args, {
-        cwd: foundryNodePath,
-        stdio: ['ignore', 'pipe', 'pipe'],
-      });
-      this.serverProcess.stdout.on('data', (d) => process.stdout.write(`[foundry] ${d}`));
-      this.serverProcess.stderr.on('data', (d) => process.stderr.write(`[foundry] ${d}`));
-      this.serverProcess.on('error', (err) => {
-        throw new Error(`Foundry server failed to start: ${err.message}`);
-      });
-      return Promise.resolve();
-    }
-
-    async _login() {
-      await this.page
-        .waitForSelector('select[name="userId"], select[name="userid"]', { timeout: 60000 })
-        .catch(() => null);
-
-      const hasLoginForm = await this.page
-        .locator('select[name="userId"], select[name="userid"]')
-        .count()
-        .then(
-          (c) => c > 0,
-          () => false,
-        );
-      if (!hasLoginForm) {
-        console.log('[foundryvtt-test-framework] No login form — assuming session already active.');
-        return;
-      }
-
-      console.log(`[foundryvtt-test-framework] Logging in as "${this.config.loginUser ?? 'Gamemaster'}"...`);
-      const found = await this.page.evaluate((userName) => {
-        const sel = document.querySelector('select[name="userId"], select[name="userid"]');
-        const opt = Array.from(sel.options).find((o) => o.text === userName);
-        if (!opt) return false;
-        sel.value = opt.value;
-        sel.dispatchEvent(new Event('change', { bubbles: true }));
-        return true;
-      }, this.config.loginUser ?? 'Gamemaster');
-
-      if (!found)
-        throw new Error(
-          `[foundryvtt-test-framework] User "${this.config.loginUser ?? 'Gamemaster'}" not found in login select`,
-        );
-
-      await this.page.evaluate(() => {
-        const btn = Array.from(document.querySelectorAll('button')).find(
-          (b) => b.textContent.trim() === 'Join Game Session',
-        );
-        btn?.click();
-      });
-
-      await new Promise((r) => setTimeout(r, 3000));
-    }
-  };
-
-  main(SmokeFramework).catch((err) => {
+  main(Framework).catch((err) => {
     console.error(`\nE2E SMOKE FAIL: ${err.stack ?? err.message}`);
     process.exitCode = 1;
   });

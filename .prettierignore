@@ -6,3 +6,7 @@ dist
 package-lock.json
 .pnp.cjs
 .pnp.js
+
+# Recorded e2e fixtures: format is canonically the recorder's JSON.stringify(_, null, 2) output
+# (tests/e2e/record-fixtures.mjs); re-formatting them breaks byte-stable re-record comparisons.
+tests/e2e/fixtures/
