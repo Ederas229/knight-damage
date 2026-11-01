@@ -31,3 +31,9 @@ dist
 
 # Junit results
 junit.xml
+
+# E2E test data (contains a copied Foundry license.json — must never be committed)
+test-data/
+
+# E2E local machine config (config.example.mjs is the committed template)
+tests/e2e/config.mjs
