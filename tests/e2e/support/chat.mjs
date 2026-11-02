@@ -66,11 +66,18 @@ export const messageContentInPage = (msgId) =>
   document.querySelector(`li.chat-message[data-message-id="${msgId}"]`)?.innerHTML ?? null;
 
 /**
- * DOCUMENT-level (executeInFoundry): the PINNED message's STORED content — the serialized
- * `content` field, NOT the live DOM. A module can mutate the card DOM directly without touching
- * the document; only this probe can pin what a message.update({content}) actually persisted.
+ * Page-function waitFor predicate: null (retry) until the PINNED message's STORED content is a
+ * string that INCLUDES `mustInclude` and EXCLUDES `mustExclude`. The one-shot storedContent read
+ * cannot pin persistence: message.update({content}) is unawaited and its DB response racing a
+ * later actor write is exactly the latency spike a loaded machine produces (review-5 B1).
+ * Pass the markers as trailing args — this function is stringified page-side (no closures).
  */
-export const storedMessageContentInPage = (msgId) => game.messages.get(msgId)?.content ?? null;
+export const storedContentPersistedInPage = (msgId, mustInclude, mustExclude) => {
+  const stored = game.messages.get(msgId)?.content;
+  if (typeof stored !== 'string') return null;
+  if (!stored.includes(mustInclude) || stored.includes(mustExclude)) return null;
+  return { ok: true, sample: stored.slice(0, 240) };
+};
 
 /** Page-function: the module's damage buttons on the PINNED card (null until injection happened). */
 export const damageButtonsOnCardInPage = (msgId) => {
@@ -114,8 +121,14 @@ export const findNewRecapMessageInPage = (excludeIds) => {
     (m) => !excludeIds.includes(m.id) && m.flags?.['knight-damage']?.isRecap === true,
   );
   if (fresh.length === 0) return null; // waitFor retries
+  // Every candidate id is surfaced so the CALLER can sink them all into its cleanup accumulator
+  // before throwing (review-5 B3): a multi-recap anomaly must leak zero cards into the
+  // boot-persistent chat log.
   if (fresh.length > 1)
-    return { error: `${fresh.length} new recap messages from one application: ${fresh.map((m) => m.id)}` };
+    return {
+      error: `${fresh.length} new recap messages from one application: ${fresh.map((m) => m.id)}`,
+      ids: fresh.map((m) => m.id),
+    };
   const message = fresh[fresh.length - 1];
   const kd = message.flags['knight-damage'];
   return {

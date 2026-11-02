@@ -43,7 +43,7 @@ import {
   listMessageIdsInPage,
   messageContentInPage,
   messageFlagsInPage,
-  storedMessageContentInPage,
+  storedContentPersistedInPage,
   waitForCard,
 } from './support/chat.mjs';
 import {
@@ -87,7 +87,8 @@ const SEED_STATS = {
 };
 
 // RECAP LABEL CONTRACT (damageBase.js:312-333, byte-level from the UTF-8 source): the recap stat
-// lines are EXACTLY ` <div>${label} : ${value}</div>` with these labels — 'Énergie', 'Armure',
+// lines are EXACTLY ` <div>${label} : ${value}</div>` with these labels — 'Energie' (UNACCENTED in
+// damageBase.js:312), 'Armure',
 // 'Blindage', 'Guardian', 'Santé', 'Cohésion', 'Espoir' — each line emitted ONLY when the repartition
 // value is truthy (a 0-valued key prints NO line). The header line is
 // 'Récapitulatif des dégâts' + the .revert-damage button.
@@ -300,7 +301,14 @@ async function main(Framework) {
       id = second?.id ?? null;
     }
     if (!id) throw new Error('fixture replay failed (even without rolls)');
-    await waitForCard(fw, id);
+    try {
+      await waitForCard(fw, id);
+    } catch (err) {
+      // The card never rendered: the message EXISTS document-side, so delete it here — the caller
+      // never received the id and cannot clean it up (review-5 B3: non-recap leak window).
+      await fw.executeInFoundry(deleteMessagesInPage, [id]).catch(() => {});
+      throw err;
+    }
     return id;
   }
 
@@ -318,6 +326,7 @@ async function main(Framework) {
     const preIds = await fw.executeInFoundry(listMessageIdsInPage);
     await fw.waitFor(clickOnMessageCard, 15000, msgId, `button[data-action="${action}"]`);
     const recap = await fw.waitFor(findNewRecapMessageInPage, 15000, preIds);
+    if (recap?.ids) recapSink.push(...recap.ids); // multi-recap anomaly: sink every candidate BEFORE throwing
     if (!recap || recap.error) throw new Error(`recap message discovery failed: ${recap?.error ?? 'timeout'}`);
     recapSink.push(recap.id);
     const stats = await fw.waitFor(statsMatchInPage, 15000, VICTIM_ACTOR_ID, expectedStats);
@@ -343,10 +352,20 @@ async function main(Framework) {
   }
 
   async function victimMatchesSeedBaseline() {
-    const baseline = JSON.stringify(SEED_STATS);
-    const now = JSON.stringify(await fw.executeInFoundry(readStatsInPage, VICTIM_ACTOR_ID));
-    if (now !== baseline) console.log(`[damage] baseline expected ${baseline}\n[damage] baseline actual   ${now}`);
-    return now === baseline;
+    // ORDER-INDEPENDENT comparison (entries loop, mirroring statsMatchInPage): SEED_STATS and
+    // readStatsInPage currently share key order, but a refactor reordering one side must never
+    // flip this self-check (review-5 B4).
+    const now = await fw.executeInFoundry(readStatsInPage, VICTIM_ACTOR_ID);
+    const expected = Object.entries(SEED_STATS);
+    const actual = Object.entries(now ?? {});
+    const same =
+      actual.length === expected.length &&
+      expected.every(([key, value]) => actual.some(([k, v]) => k === key && v === value));
+    if (!same)
+      console.log(
+        `[damage] baseline expected ${JSON.stringify(SEED_STATS)}\n[damage] baseline actual   ${JSON.stringify(now)}`,
+      );
+    return same;
   }
 
   try {
@@ -851,6 +870,7 @@ async function main(Framework) {
         // askModifier does `damage += value` (damageBase.js:92): 14 + 3 = 17 -> -CdF 4 = 13 ->
         // armure 87; carry trunc(13/5)=2 -> sante 18.
         const recap = await fw.waitFor(findNewRecapMessageInPage, 15000, preIds);
+        if (recap?.ids) recapIds.push(...recap.ids); // sink multi-candidate anomaly before throwing
         if (!recap || recap.error)
           throw new Error(`recap discovery after modifier submit failed: ${recap?.error ?? 'timeout'}`);
         recapIds.push(recap.id); // sink NOW: the stats wait below must not orphan the recap card
@@ -902,11 +922,19 @@ async function main(Framework) {
         // DOCUMENT (game.messages content field), not the DOM: the knight revert mutates the card
         // DOM directly (jQuery css/remove), so the innerHTML read above cannot observe whether the
         // update landed. Stored content = html.find('.message-content').html() at update time.
-        const stored = await fw.executeInFoundry(storedMessageContentInPage, recapId);
+        // WAITED (review-5 B1): the update is unawaited and its DB response only *usually* precedes
+        // the +101 ms actor write; a latency spike inverts that, so poll until persisted.
+        const persisted = await fw.waitFor(
+          storedContentPersistedInPage,
+          15000,
+          recapId,
+          'line-through',
+          'revert-damage',
+        );
         push(
           "case9: revert PERSISTS the mutated recap content (STORED message.content contains 'line-through', no revert-damage button)",
-          typeof stored === 'string' && stored.includes('line-through') && !stored.includes('revert-damage'),
-          `stored: ${stored?.slice(0, 200)}`,
+          persisted?.ok === true,
+          `got ${JSON.stringify(persisted)}`,
         );
       } finally {
         await cleanup([msgId, recapId, ...recapIds], snap);

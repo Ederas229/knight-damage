@@ -23,7 +23,12 @@ import {
   recordedMessages,
   registeredHooks,
 } from './support/foundry-globals.mjs';
-import { VICTIM_UUID, knightSystem, registerAttacker } from './support/knight-fixtures.mjs';
+import {
+  VICTIM_UUID,
+  knightSystem,
+  registerAttacker,
+  standardKnightMessageFixture,
+} from './support/knight-fixtures.mjs';
 
 const TOKEN_UUID = 'Scene.scene-1.Token.token-def';
 const VEHICULE_UUID = 'Scene.scene-1.Token.token-def.Actor.actor-veh';
@@ -100,6 +105,12 @@ describe('antianatheme injection via the registered preUpdateChatMessage hook (k
     const data = { flags: { knight: { weapon: {}, actor: { effects: [{ statuses: ['anti-anatheme'] }] } } } };
     runHook(data);
     expect(data.flags.knight.weapon.effets).toBeUndefined();
+  });
+
+  it("the REAL recorded fixture's attacker snapshot passes the hook INERTLY (effects: [] -> no injection) — CI witness that the shared baseline carries no baked attacker status: a future re-record that bakes one into flags.knight.actor.effects flips THIS pin, not the damage math downstream", () => {
+    const data = updateData({ actor: standardKnightMessageFixture().flags.knight.actor });
+    runHook(data);
+    expect(data.flags.knight.weapon.effets.raw).toEqual(['percearmure 40', 'penetrant 6']);
   });
 });
 
