@@ -49,6 +49,60 @@ describe('entrypoint import surface', () => {
   });
 });
 
+describe('antianatheme injection via the registered preUpdateChatMessage hook (knight-damage.js:83-96)', () => {
+  // v14 fix pin: the pre-fix listener read data.flags.knight.actor.statuses.has(...) — but the
+  // knight flag's actor entry is a SERIALIZED snapshot and Actor#statuses is a runtime-only
+  // derived Set (core client/documents/actor.mjs), so the listener threw (swallowed) and the
+  // injection never ran. Statuses in serialized data live at effects[].statuses (plain arrays),
+  // and ONLY serialized shapes reach the hook: the runtime-Set lookup is deliberately absent.
+  function runHook(data) {
+    const hooks = registeredHooks('preUpdateChatMessage');
+    expect(hooks).toHaveLength(1);
+    // Core dispatches pre-update hooks via Hooks.call (never awaited): a synchronous mutation is
+    // load-bearing — a Promise-returning listener would race the already-committed update.
+    expect(hooks[0].fn(makeMessage({}), data)).toBeUndefined();
+  }
+
+  function updateData({ raw = ['percearmure 40', 'penetrant 6'], actor = { _id: 'actor-atk', effects: [] } } = {}) {
+    return { flags: { knight: { weapon: { effets: { raw } }, actor } } };
+  }
+
+  it('serialized attacker snapshot carrying the anti-anatheme status effect -> "antianatheme" appended to weapon.effets.raw', () => {
+    const data = updateData({ actor: { _id: 'actor-atk', effects: [{ _id: 'eff-x', statuses: ['anti-anatheme'] }] } });
+    runHook(data);
+    expect(data.flags.knight.weapon.effets.raw).toEqual(['percearmure 40', 'penetrant 6', 'antianatheme']);
+  });
+
+  it('already-injected raw stays single-pushed (re-running the hook on the updated data is inert — the includes guard short-circuits before the effects read)', () => {
+    const data = updateData({
+      raw: ['percearmure 40', 'antianatheme'],
+      actor: { effects: [{ statuses: ['anti-anatheme'] }] },
+    });
+    runHook(data);
+    expect(data.flags.knight.weapon.effets.raw).toEqual(['percearmure 40', 'antianatheme']);
+  });
+
+  it('inert attacker-snapshot shapes are null-safe (each silently skips, no swallowed TypeError): no actor key, no effects, effect without statuses, unrelated status, and a runtime-style live statuses Set (never reaches a real hook — flag data is always serialized — and deliberately NOT consulted)', () => {
+    for (const actor of [
+      undefined,
+      { _id: 'actor-atk' },
+      { _id: 'actor-atk', effects: [{ _id: 'eff-x' }] },
+      { _id: 'actor-atk', effects: [{ _id: 'eff-x', statuses: ['peur'] }] },
+      { _id: 'actor-atk', statuses: new Set(['anti-anatheme']) },
+    ]) {
+      const data = updateData({ actor });
+      runHook(data);
+      expect(data.flags.knight.weapon.effets.raw).toEqual(['percearmure 40', 'penetrant 6']);
+    }
+  });
+
+  it('update data without weapon.effets.raw (e.g. knight edits unrelated flags) is left untouched, no crash', () => {
+    const data = { flags: { knight: { weapon: {}, actor: { effects: [{ statuses: ['anti-anatheme'] }] } } } };
+    runHook(data);
+    expect(data.flags.knight.weapon.effets).toBeUndefined();
+  });
+});
+
 describe('createDamageObject dispatch (knight-damage.js:336-352: pure type switch, no side effects)', () => {
   function victimToken(type, system) {
     const actor = makeActor(type, system, { id: 'actor-def', uuid: VICTIM_UUID });

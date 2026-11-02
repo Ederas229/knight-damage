@@ -80,12 +80,19 @@ async function addReminder({ uuidOrigin, uuidActor, value, stat, revert }) {
   origin.actor.setFlag('knight-damage', stat, await generateReminderData(origin, actor, value, stat, revert));
 }
 
-Hooks.on('preUpdateChatMessage', async (message, data) => {
-  if (!data?.flags?.knight?.weapon?.effets?.raw) return;
-  if (data?.flags?.knight?.weapon?.effets?.raw.includes('antianatheme')) return;
-  if (!data.flags.knight.actor.statuses.has('anti-anatheme')) return;
+Hooks.on('preUpdateChatMessage', (message, data) => {
+  const raw = data?.flags?.knight?.weapon?.effets?.raw;
+  if (!raw || raw.includes('antianatheme')) return;
+  const effects = data?.flags?.knight?.actor?.effects;
+  if (!Array.isArray(effects)) return;
+  // v14 : flags.knight.actor est un instantane SERIALISE de l'attaquant — Actor#statuses est un
+  // Set derive uniquement a l'execution (core client/documents/actor.mjs), jamais present dans
+  // cette donnee (l'ancien lecteur actor.statuses.has(...) levait un TypeError avale sans
+  // jamais injecter). Dans les donnees serialisees, les statuts vivent dans effects[].statuses
+  // (tableaux simples — le champ SetField d'ActiveEffectDocument).
+  if (!effects.some((e) => (e?.statuses ?? []).includes('anti-anatheme'))) return;
 
-  data.flags.knight.weapon.effets.raw.push('antianatheme');
+  raw.push('antianatheme');
 });
 
 Hooks.on('renderChatMessageHTML', async (message, html) => {
