@@ -32,6 +32,7 @@
     "record:e2e": "node tests/e2e/record-fixtures.mjs",
     "test:e2e:fixtures": "node tests/e2e/fixtures.test.mjs",
     "test:e2e:damage": "node tests/e2e/damage-knight.test.mjs",
+    "test:e2e:vehicule-mecha": "node tests/e2e/damage-vehicule-mecha.test.mjs",
     "format": "prettier --write \"./**/*.(js|cjs|mjs|json|yml|css)\"",
     "postinstall": "husky init",
     "prepare": "husky"
