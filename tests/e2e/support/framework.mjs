@@ -22,11 +22,15 @@
 //    browser locale to fr-FR: the knight system localizes its chat HTML through game.i18n and the
 //    module under test regexes on FRENCH fragments (`Dégâts</div>`); with an en-US locale the
 //    system renders `Damage</div>` and the whole message contract would drift.
+// Upstream issue candidate #4 (kept verbatim, NOT diverged): the base _spawnServer throws inside
+// the ChildProcess 'error' listener, which surfaces as an uncaught exception instead of rejecting
+// start() — our override copies the same pattern so the issue batch sees it unchanged.
 
 import { spawn } from 'node:child_process';
 import { rmSync } from 'node:fs';
 import net from 'node:net';
 import path from 'node:path';
+import { acquireSpawnMutex } from './spawn-lock.mjs';
 
 /* global process */
 
@@ -77,6 +81,11 @@ export async function loadFramework() {
     async _spawnServer() {
       const { foundryNodePath, testDataPath, foundryServerPort } = this.config;
       const port = foundryServerPort ?? 30000;
+
+      // Ownership first (see support/spawn-lock.mjs): the port probe below only proves no server is
+      // LISTENING yet — a booting server from a concurrent e2e run would slip through, so the
+      // repo-root mutex is what makes purging options.json.lock safe.
+      acquireSpawnMutex();
 
       // Gate against back-to-back runs: stop() sends SIGTERM, and on Windows the data-dir lock
       // (Foundry proper-lockfiles Config/options.json -> options.json.lock/ for up to `stale: 1e4`ms)

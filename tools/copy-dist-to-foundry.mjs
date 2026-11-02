@@ -30,7 +30,14 @@ async function getDataPath() {
   if (typeof dataPath !== 'string' || !dataPath) {
     throw new Error('Property dataPath in foundryconfig.json must be a string or an array of strings');
   }
-  return path.resolve(dataPath);
+  const resolved = path.resolve(dataPath);
+  // Match gulp's getDataPaths: fail fast when the data path does not exist, instead of letting
+  // fs.cp mkdirp a phantom Data/modules tree under a mistyped path (the failure would only
+  // surface much later, in setup:e2e, pointing at the wrong thing).
+  if (!(await stat(resolved).catch(() => null))) {
+    throw new Error(`dataPath from foundryconfig.json does not exist: ${resolved}`);
+  }
+  return resolved;
 }
 
 async function main() {

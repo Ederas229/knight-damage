@@ -148,10 +148,17 @@ async function main(Framework) {
     );
 
     // 7. Live proof that the module acts on this exact message (its buttons got injected).
-    const liveButtons = await fw.executeInFoundry(moduleButtonsInPage);
+    //    waitFor-style: moduleButtonsInPage returns null until the renderChatMessageHTML hook has
+    //    added .damageButton buttons to the last card (sampling the DOM without a wait would be a
+    //    false "buttons missing" failure under timing skew).
+    const liveButtons = await fw.waitFor(moduleButtonsInPage, 15000);
     console.log(`[record] module buttons on the live damage message: ${JSON.stringify(liveButtons)}`);
 
-    // 8. Strip volatiles, attach metadata, write the fixture.
+    // 8. Strip volatiles, attach metadata, gate, THEN write. The integrity gate runs BEFORE the
+    //    write on purpose: the fixture file is the shared source of truth for BOTH suites (the
+    //    unit suite imports it) — a failed/drifted recording must never overwrite the known-good
+    //    baseline; exit code alone would leave a polluted file that the unit contract test then
+    //    adapts to (its value pin softens when diceOverrideApplied is false).
     const clean = stripVolatileKeys(dumped.object);
     const fixture = normalizeForWrite({
       ...buildFixtureMeta({
@@ -164,19 +171,6 @@ async function main(Framework) {
       ...clean,
     });
 
-    const fileName = fixtureFileName(versions.knight);
-    const outPath = path.join(FIXTURES_DIR, fileName);
-    mkdirSync(FIXTURES_DIR, { recursive: true });
-    writeFileSync(outPath, `${JSON.stringify(fixture, null, 2)}\n`, 'utf8');
-    console.log(`[record] wrote ${path.relative(process.cwd(), outPath)}`);
-
-    if (process.env.KDT_E2E_RAW_DUMP) {
-      const rawDir = path.join(config.testDataPath, 'recordings');
-      mkdirSync(rawDir, { recursive: true });
-      writeFileSync(path.join(rawDir, `raw-${fileName}`), `${JSON.stringify(dumped.object, null, 2)}\n`, 'utf8');
-      console.log(`[record] raw (unstripped) dump in ${rawDir}`);
-    }
-
     const failures = [];
     if (!diceOverrideApplied) failures.push(`target value ${target.value} != expected ${EXPECTED_TARGET_VALUE}`);
     if (!/Dégâts<\/div>/.test(clean.content)) failures.push('content lacks the French Dégâts</div> fragment');
@@ -185,11 +179,25 @@ async function main(Framework) {
     if (!liveButtons || liveButtons.length < 5)
       failures.push(`module buttons missing on the live message: ${liveButtons}`);
 
+    const fileName = fixtureFileName(versions.knight);
+    const outPath = path.join(FIXTURES_DIR, fileName);
+
+    if (process.env.KDT_E2E_RAW_DUMP) {
+      // Raw dumps are gitignored test-data artifacts: useful even for a FAILED recording.
+      const rawDir = path.join(config.testDataPath, 'recordings');
+      mkdirSync(rawDir, { recursive: true });
+      writeFileSync(path.join(rawDir, `raw-${fileName}`), `${JSON.stringify(dumped.object, null, 2)}\n`, 'utf8');
+      console.log(`[record] raw (unstripped) dump in ${rawDir}`);
+    }
+
     if (failures.length) {
       await fw.screenshot('record-failure.png').catch(() => {});
-      console.log(`\nE2E RECORD: FAIL (${failures.join('; ')})`);
+      console.log(`\nE2E RECORD: FAIL — baseline fixture NOT touched (${failures.join('; ')})`);
       process.exitCode = 1;
     } else {
+      mkdirSync(FIXTURES_DIR, { recursive: true });
+      writeFileSync(outPath, `${JSON.stringify(fixture, null, 2)}\n`, 'utf8');
+      console.log(`[record] wrote ${path.relative(process.cwd(), outPath)}`);
       console.log(`\nE2E RECORD: PASS (${fileName})`);
       process.exitCode = 0;
     }

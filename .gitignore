@@ -37,3 +37,6 @@ test-data/
 
 # E2E local machine config (config.example.mjs is the committed template)
 tests/e2e/config.mjs
+
+# E2E ownership mutex (tests/e2e/support/spawn-lock.mjs); self-heals, safe to delete manually
+.e2e-spawn.lock

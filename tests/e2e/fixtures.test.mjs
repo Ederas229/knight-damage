@@ -68,23 +68,33 @@ async function main(Framework) {
     ]);
 
     // Replay: ChatMessage.create the recorded object (metadata + volatiles already stripped).
-    // If the live core rejects the stored `rolls` payload (schema churn between core versions),
-    // retry once without rolls — the module never reads message.rolls.
-    let created = await fw.executeInFoundry((data) => ChatMessage.create(data).then((m) => m.id), message);
+    // The catch INSIDE the page fn is load-bearing: create REJECTS on a schema-invalid `rolls`,
+    // and an uncaught rejection would kill page.evaluate — null lets the no-rolls fallback run.
+    const createInPage = (data) =>
+      ChatMessage.create(data)
+        .then((m) => m.id)
+        .catch(() => null);
+
+    let created = await fw.executeInFoundry(createInPage, message);
     let replayedWithRolls = true;
     if (!created) {
       replayedWithRolls = false;
       const noRolls = { ...message };
       delete noRolls.rolls;
-      created = await fw.executeInFoundry((data) => ChatMessage.create(data).then((m) => m.id), noRolls);
+      created = await fw.executeInFoundry(createInPage, noRolls);
       console.log('[fixtures] replay fell back to stripping `rolls` (core schema refused the stored roll payloads)');
     }
+    if (!created)
+      throw new Error('fixture replay failed even without `rolls` — recorded contract no longer createable');
 
     // A. Module button injection on the replayed message (rendered DOM, not just flags).
+    // STRICT card targeting: no "last card" fallback — without setup:e2e between runs, the chat
+    // log still holds a PREVIOUS replay whose buttons would silently satisfy the predicate, and a
+    // fallback would also mask a dataset mismatch. Miss => keep polling (waitFor retries on null).
     const buttons = await fw.waitFor(
       (msgId) => {
         const cards = Array.from(document.querySelectorAll('.chat-scroll li.chat-message'));
-        const card = cards.find((li) => li.dataset.messageId === msgId) ?? cards[cards.length - 1];
+        const card = cards.find((li) => li.dataset.messageId === msgId);
         if (!card) return null;
         const found = Array.from(card.querySelectorAll('.damageButton button')).map((b) => ({
           label: b.textContent.trim(),

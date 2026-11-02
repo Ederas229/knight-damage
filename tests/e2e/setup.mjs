@@ -7,6 +7,7 @@ import { access, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { runSetup } from 'foundryvtt-test-framework/setup';
 import config from './config.mjs';
+import { acquireSpawnMutex } from './support/spawn-lock.mjs';
 
 /* global process */
 
@@ -20,6 +21,10 @@ async function exists(p) {
 }
 
 async function main() {
+  // One e2e actor at a time (repo-root .e2e-spawn.lock) — wiping test-data while another run's
+  // Foundry server holds it is exactly the corruption class this mutex prevents.
+  acquireSpawnMutex();
+
   const checks = [
     ['license.json', path.join(config.sourceDataPath, 'Config', 'license.json')],
     ...(config.systemsToCopy ?? []).map((id) => [
@@ -91,9 +96,11 @@ async function main() {
   await writeFile(optionsPath, JSON.stringify(options, null, 2) + '\n', 'utf8');
   console.log('setup:e2e: set Config/options.json language=fr (chat HTML contract is French).');
 
-  // A previous e2e run killed with SIGTERM leaves Foundry's proper-lockfile lock directory
-  // (options.json.lock/) behind for up to its 10 s stale window; runSetup spawns a verification
-  // server which would then die with "already locked by another process". Clear it up front.
+  // Hygiene: a previous e2e run killed with SIGTERM leaves Foundry's proper-lockfile lock
+  // directory (options.json.lock/) behind for up to its 10 s stale window. Framework v2.0.0
+  // runSetup itself never boots a server (validate + copy only) — the boot-time port-wait +
+  // stale-lock purge lives in support/framework.mjs:_spawnServer — but clearing the artifact
+  // here keeps the copied tree clean for whichever script boots next.
   await rm(path.join(optionsPath + '.lock'), { recursive: true, force: true });
 
   for (const id of config.worldsToCopy ?? []) {

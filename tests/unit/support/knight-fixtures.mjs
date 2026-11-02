@@ -22,7 +22,9 @@ export const VICTIM_UUID = 'Scene.scene-1.Token.token-def.Actor.actor-def';
 
 // Recorded contract: the live attack fixture (metadata header + stripped message).
 const RECORDED = loadRecordedFixture(STANDARD_FIXTURE_NAME);
-export const RECORDED_FIXTURE_META = RECORDED.meta;
+// Shallow-freeze the meta: the message side is deep-cloned per call below, but a consumer must
+// not be able to mutate the recording context (versions, dice plan) that contract tests pin.
+export const RECORDED_FIXTURE_META = Object.freeze(RECORDED.meta);
 const RECORDED_MESSAGE = RECORDED.message;
 
 /**
