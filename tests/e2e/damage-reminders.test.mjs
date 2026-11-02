@@ -778,8 +778,10 @@ async function main(Framework) {
       try {
         // target 10: 10 - CdF eff (10 - fixture raw 'penetrant 6' = 4) = 6 < energie 12 -> the
         // UNSATURATED 6 lands in recap AND flag byte-for-byte. Any wrong CdF interaction fails
-        // loudly: dropping penetrant gives 10-10=0 (no 'Energie' line, {energie:0}), inflating it
-        // goes negative (no recap lines at all).
+        // loudly in every direction: dropping penetrant gives 10-10=0 so calculate()
+        // early-returns at damageKnight.js:104 BEFORE calculateEnergie ever runs (NO recap map
+        // key, NO flag — the case dies in the stats waitFor as an infrastructure-error line),
+        // and inflating the subtraction goes negative the same way.
         energieMsg = await replay((m) => {
           m.flags.knight.targets[0].value = 10;
         }, attackerSpeaker);

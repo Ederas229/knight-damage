@@ -287,7 +287,24 @@ describe('death reminder card via the registered preCreateActiveEffect hook — 
     await new Promise((resolve) => setTimeout(resolve, 0));
   }
 
-  it('a `Dead` effect on an actor holding an energie reminder map emits EXACTLY ONE flagless chat card: EXACT header, one line per NONZERO key with trunc/6 d6 and the _->. round-trip NAME, the 0-value key skipped BEFORE any fromUuid (its uuid is not even registered), the undefined-flag espoir loop silent', async () => {
+  // Spy over the stubbed bare-global fromUuid (the module resolves it dynamically at call
+  // time): the recorded lookups pin the SKIP ORDER — a `value==0` continue implemented AFTER
+  // fromUuid would push 'Actor.actor-gone' here (mutation-validated: moving the continue past
+  // the lookup fails exactly this assertion).
+  async function fireDeadSpying(effect, lookups) {
+    const realFromUuid = globalThis.fromUuid;
+    globalThis.fromUuid = async (uuid) => {
+      lookups.push(uuid);
+      return realFromUuid(uuid);
+    };
+    try {
+      await fireDead(effect);
+    } finally {
+      globalThis.fromUuid = realFromUuid;
+    }
+  }
+
+  it('a `Dead` effect on an actor holding an energie reminder map emits EXACTLY ONE flagless chat card: EXACT header, one line per NONZERO key with trunc/6 d6 and the _->. round-trip NAME, the 0-value key skipped BEFORE any fromUuid lookup (zero lookups of its uuid — spy-pinned), the undefined-flag espoir loop silent', async () => {
     registerUuid(
       'Actor.actor-veh',
       makeActor('vehicule', {}, { id: 'actor-veh', uuid: 'Actor.actor-veh', name: 'veh-name' }),
@@ -307,15 +324,16 @@ describe('death reminder card via the registered preCreateActiveEffect hook — 
           'knight-damage': {
             // Keys are uuids with `.`->`_` (ids deliberately `_`-free, like every seed id):
             // round-trip back to the registered 'Actor.actor-veh'/'Actor.actor-atk' uuids. The
-            // 0-value key's uuid is deliberately NOT registered: a skip implemented AFTER
-            // fromUuid would crash on null.name instead of passing.
+            // 0-value key's uuid is deliberately NOT registered either — but the LOOKUP SPY
+            // below, not a crash, is what proves the skip happens before any resolution.
             energie: { 'Actor_actor-veh': 5, 'Actor_actor-atk': 13, 'Actor_actor-gone': 0 },
           },
         },
       },
     );
 
-    await fireDead({ name: 'Dead', target: dying });
+    const lookups = [];
+    await fireDeadSpying({ name: 'Dead', target: dying }, lookups);
 
     const messages = recordedMessages();
     expect(messages).toHaveLength(1); // espoir flag undefined -> that loop iteration emits nothing
@@ -325,11 +343,27 @@ describe('death reminder card via the registered preCreateActiveEffect hook — 
     expect(messages[0].content).toBe(
       "<div>Dégâts d'energie infligés :</div><div>veh-name : 5 (0d6)</div><div>atk-name : 13 (2d6)</div>",
     );
+    // The 0-value key resolves NEVER: skipping precedes fromUuid (knight-damage.js:138-139).
+    expect(lookups).toEqual(['Actor.actor-veh', 'Actor.actor-atk']);
   });
 
-  it('a NOT-Dead effect name and a Dead effect on an actor WITHOUT reminder flags both emit NOTHING (name gate + undefined-flag early return)', async () => {
+  it("a NOT-Dead effect name on an actor FULLY LOADED with a reminder map emits NOTHING (the name gate is the hook's ONLY gate — a loaded actor makes that pin load-bearing, mutation-validated), and a Dead effect on an actor WITHOUT reminder flags emits NOTHING too (the undefined-flag guard; if that guard were dropped the resulting TypeError lands in the UNAWAITED loop call as an unhandled rejection — vitest fails the run via its error reporter, not via this assertion)", async () => {
+    registerUuid(
+      'Actor.actor-atk',
+      makeActor('pnj', {}, { id: 'actor-atk', uuid: 'Actor.actor-atk', name: 'atk-name' }),
+    );
+    const flagged = makeActor(
+      'knight',
+      {},
+      {
+        id: 'actor-flagged',
+        uuid: 'Actor.actor-flagged',
+        name: 'flagged',
+        flags: { 'knight-damage': { energie: { 'Actor_actor-atk': 7 } } },
+      },
+    );
     const plain = makeActor('knight', {}, { id: 'actor-plain', uuid: 'Actor.actor-plain', name: 'plain' });
-    await fireDead({ name: 'Pas Dead', target: plain });
+    await fireDead({ name: 'Pas Dead', target: flagged });
     await fireDead({ name: 'Dead', target: plain });
     expect(recordedMessages()).toEqual([]);
   });
