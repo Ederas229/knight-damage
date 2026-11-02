@@ -56,6 +56,7 @@ import {
   updateActorInPage,
 } from './support/actor-pages.mjs';
 import { replayFixture } from './support/replay.mjs';
+import { deepEqualJson, recapMapMatches } from './support/compare.mjs';
 import {
   ATTACKER_ACTOR_ID,
   ATTACK_DICE,
@@ -199,18 +200,7 @@ const revertDomStateInPage = (msgId) => {
 };
 
 // ── Node-side test plumbing ──
-
-function deepEqualJson(a, b) {
-  return JSON.stringify(a) === JSON.stringify(b);
-}
-
-// recap flag maps are compared KEY-ORDER-SENSITIVELY: the exact repartition map (keys in the
-// order calculate() inserts them) is part of the module contract the recap HTML lines follow.
-function recapMapMatches(actual, expected) {
-  if (actual === undefined || actual === null) return false;
-  const actualKeys = Object.keys(actual);
-  return JSON.stringify(actualKeys) === JSON.stringify(Object.keys(expected)) && deepEqualJson(actual, expected);
-}
+// The comparison helpers live in support/compare.mjs (shared by all damage suites).
 
 async function main(Framework) {
   acquireSpawnMutex(); // ownership before ANYTHING (see support/spawn-lock.mjs)

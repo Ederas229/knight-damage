@@ -52,6 +52,7 @@ import {
   updateActorInPage,
 } from './support/actor-pages.mjs';
 import { replayFixture } from './support/replay.mjs';
+import { deepEqualJson, entriesEqual as statsEqual, recapMapMatches } from './support/compare.mjs';
 
 /* global process */
 
@@ -184,26 +185,8 @@ const readAtkStatsInPage = () => {
 };
 
 // ── Node-side test plumbing ──
-
-function deepEqualJson(a, b) {
-  return JSON.stringify(a) === JSON.stringify(b);
-}
-
-// Order-independent entry comparison (Phase-3 review-5 B4 rule).
-function statsEqual(actual, expected) {
-  const e = Object.entries(expected ?? {});
-  const a = Object.entries(actual ?? {});
-  return a.length === e.length && e.every(([key, value]) => a.some(([k, v]) => k === key && v === value));
-}
-
-// recap flag maps are compared KEY-ORDER-SENSITIVELY: the exact repartition map (keys in the order
-// calculate() inserts them) is part of the module contract the recap HTML lines follow.
-function recapMapMatches(actual, expected) {
-  if (actual === undefined || actual === null) return false;
-  return (
-    JSON.stringify(Object.keys(actual)) === JSON.stringify(Object.keys(expected)) && deepEqualJson(actual, expected)
-  );
-}
+// The comparison helpers live in support/compare.mjs (shared by all damage suites);
+// entriesEqual keeps the local name statsEqual at the call sites.
 
 async function main(Framework) {
   acquireSpawnMutex(); // ownership before ANYTHING (see support/spawn-lock.mjs)

@@ -33,13 +33,19 @@
 //  5. Direct-flag characterization of generateReminderMessage: a page-set crafted energie flag map
 //     (multi-key: 5 -> "0d6", 13 -> "2d6" trunc boundaries, 0 -> SKIPPED key) + the 'Dead' effect ->
 //     the card shows ONLY the nonzero keys, names resolved through the `_`->`.` uuid round-trip.
+//  6. PRE-CAP targets (Phase-5 review 1): the 130-mutations all saturate at gauge caps, so the
+//     CdF/penetrant subtraction is otherwise UNOBSERVED — target 10 (energie: 10-4=6) and 20
+//     (espoir: 20-4-3=13) land UNSATURATED in the recap AND flag bytes, pinning penetrant-6 and
+//     reduction-3 in the live chain (wrong math fails loudly in every direction, e.g. dropping
+//     penetrant gives 0 damage -> no recap line at all).
 //
 // Oracle: tests/unit/{damage-knight,helpers,damage-revert}.test.mjs (espoir/energie target paths,
 // generateReminderData round-trip/revert/accumulation, revertEnergieReminder revert:true) combined
 // with the LIVE seed stats PROBED at boot (armure 100 / CdF 10 / sante 20 / espoir 15 / energie 12 /
 // espoir.reduction 3) — never the unit doubles' literals. Derivation chain (fixture 130-mutation
 // pattern): ceil(130*1)=130 -> CdF 10 - penetrant 6 = 4 soaked -> 126 -> gauge caps: energie 12
-// absorbs 12 (126>=12); espoir 126 - reduction 3 = 123 absorbs 15 (123>=15).
+// absorbs 12 (126>=12); espoir 126 - reduction 3 = 123 absorbs 15 (123>=15). The pre-cap 10/20
+// targets (case6) are what actually OBSERVE the 126-equivalent subtraction unsaturated.
 //
 // Discipline (mandatory plan rules, unchanged from Phase 3/4): every chat access message-id-pinned;
 // recap AND flagless death-card ids enter the cleanup sink the MOMENT they are discovered; every
@@ -75,6 +81,7 @@ import {
   updateActorInPage,
 } from './support/actor-pages.mjs';
 import { replayFixture } from './support/replay.mjs';
+import { deepEqualJson, entriesEqual, flagNamespacesEqual, recapMapMatches } from './support/compare.mjs';
 
 /* global process */
 
@@ -273,27 +280,11 @@ const leakScanInPage = (energieMarker, espoirMarker) => ({
 const readEspoirReductionInPage = (actorId) => game.actors.get(actorId).system.espoir.reduction;
 
 // ── Node-side test plumbing ──
-
-function deepEqualJson(a, b) {
-  return JSON.stringify(a) === JSON.stringify(b);
-}
-
-// Order-independent entry comparison (Phase-3 review-5 B4 rule) — reused for stat maps AND flag
-// namespaces (values are numbers; exact entry sets required, extras on either side fail).
-function entriesEqual(actual, expected) {
-  const e = Object.entries(expected ?? {});
-  const a = Object.entries(actual ?? {});
-  return a.length === e.length && e.every(([key, value]) => a.some(([k, v]) => k === key && v === value));
-}
-
-// recap flag maps are compared KEY-ORDER-SENSITIVELY (the repartition insertion order is part of
-// the module contract the recap HTML lines follow).
-function recapMapMatches(actual, expected) {
-  if (actual === undefined || actual === null) return false;
-  return (
-    JSON.stringify(Object.keys(actual)) === JSON.stringify(Object.keys(expected)) && deepEqualJson(actual, expected)
-  );
-}
+// deepEqualJson/entriesEqual/recapMapMatches come from support/compare.mjs (shared); the flag
+// NAMESPACE self-check below uses flagNamespacesEqual — the order-tolerant DEEP variant, because
+// namespace values are nested objects whose two CDP copies are reference-unequal by construction
+// (entriesEqual's strict v===value would false-fail the moment a crashed run leaves flag residue,
+// breaking the back-to-back contract it defends — Phase-5 review finding 1).
 
 async function main(Framework) {
   acquireSpawnMutex(); // ownership before ANYTHING (see support/spawn-lock.mjs)
@@ -492,7 +483,7 @@ async function main(Framework) {
         // apply() double-update live witness (INTENDED): module update #1 carries an EMPTY payload
         // (nothing but energie is in the repartition), update #2 carries system.energie.value
         // (damageBase.js:298-303, unit-pinned updates[1]). LIVE v14 shape: the payload handed to
-        // preUpdateActor is the MERGED nested data and ALWAYS carries `_id`, so the empty first
+        // preUpdateActor is the CLEANED PARTIAL nested data and ALWAYS carries `_id`, so the empty first
         // update is witnessed as {_id: <actor>} — strip `_id` before classifying. The sync hook
         // (knight.mjs:848, whitelist armure+energie only) mirrors the energie write into
         // equipements.armure.energie — exactly 3 witnesses: {}, {energie:0}, {sync}. The module
@@ -773,6 +764,75 @@ async function main(Framework) {
       }
     });
 
+    // ─────────────── 6. PRE-CAP targets: the 130-mutations all saturate at gauge caps, so the
+    // CdF/penetrant subtraction (130 -> 126) is otherwise UNOBSERVED by the whole suite ───────────────
+
+    await runCase('case6-precap-values', async () => {
+      const vicSnap = await fw.executeInFoundry(snapshotActorSystemInPage, VIC_ACTOR_ID);
+      const atkSnap = await fw.executeInFoundry(snapshotActorSystemInPage, ATK_ACTOR_ID);
+      const vicFlags = await fw.executeInFoundry(snapshotModuleFlagsInPage, VIC_ACTOR_ID);
+      const atkFlags = await fw.executeInFoundry(snapshotModuleFlagsInPage, ATK_ACTOR_ID);
+      let energieMsg;
+      let espoirMsg;
+      const recapIds = [];
+      try {
+        // target 10: 10 - CdF eff (10 - fixture raw 'penetrant 6' = 4) = 6 < energie 12 -> the
+        // UNSATURATED 6 lands in recap AND flag byte-for-byte. Any wrong CdF interaction fails
+        // loudly: dropping penetrant gives 10-10=0 (no 'Energie' line, {energie:0}), inflating it
+        // goes negative (no recap lines at all).
+        energieMsg = await replay((m) => {
+          m.flags.knight.targets[0].value = 10;
+        }, attackerSpeaker);
+        const precapE = await applyDamageAndAwait(
+          energieMsg,
+          'applyDamageEnergie',
+          { ...SEED_STATS, energie: 6 },
+          recapIds,
+        );
+        const flagE6 = await waitModuleFlag(ATK_ACTOR_ID, 'energie', [[VICTIM_UUID_KEY, 6]], 'case6 energie');
+        push(
+          `case6: target 10 -> pre-cap damage 10-4=6 lands UNSATURATED: energie 12->6, recap EXACT {energie:6} + 'Energie : 6' + attacker flag EXACTLY {${VICTIM_UUID_KEY}: 6} (pins the fixture penetrant-6 CdF subtraction every capped case hides)`,
+          recapMapMatches(precapE.recap.recap, { energie: 6 }) &&
+            entriesEqual(precapE.stats, { ...SEED_STATS, energie: 6 }) &&
+            precapE.recap.content.includes(recapLine('Energie', 6)) &&
+            flagE6 !== null,
+          `recap ${JSON.stringify(precapE.recap.recap)}, stats ${JSON.stringify(precapE.stats)}, flag ${JSON.stringify(flagE6)}`,
+        );
+        // espoir twin: target 20 -> 20-4=16, minus system.espoir.reduction 3 = 13 < espoir 15 ->
+        // espoir 15->2, recap {espoir:13}: pins the reduction subtraction pre-cap too. (The
+        // energie flag {key:6} on the ATTACKER stays UNTOUCHED by the espoir query — the two
+        // reminder stats are SEPARATE keys of the same namespace.)
+        await restoreBaselineBetween(vicSnap, vicFlags);
+        espoirMsg = await replay((m) => {
+          m.flags.knight.targets[0].value = 20;
+        }, attackerSpeaker);
+        const precapH = await applyDamageAndAwait(
+          espoirMsg,
+          'applyDamageEspoir',
+          { ...SEED_STATS, espoir: 2 },
+          recapIds,
+        );
+        const flagH13 = await waitModuleFlag(ATK_ACTOR_ID, 'espoir', [[VICTIM_UUID_KEY, 13]], 'case6 espoir');
+        const flagEStill = await waitModuleFlag(
+          ATK_ACTOR_ID,
+          'energie',
+          [[VICTIM_UUID_KEY, 6]],
+          'case6 energie-after-espoir',
+        );
+        push(
+          `case6: target 20 -> 20-4-3(reduction)=13 lands UNSATURATED: espoir 15->2, recap EXACT {espoir:13} + flag EXACTLY {${VICTIM_UUID_KEY}: 13} (pins espoir.reduction pre-cap; the energie key of the same namespace is UNTOUCHED by the espoir query)`,
+          recapMapMatches(precapH.recap.recap, { espoir: 13 }) &&
+            entriesEqual(precapH.stats, { ...SEED_STATS, espoir: 2 }) &&
+            precapH.recap.content.includes(recapLine('Espoir', 13)) &&
+            flagH13 !== null &&
+            flagEStill !== null,
+          `recap ${JSON.stringify(precapH.recap.recap)}, stats ${JSON.stringify(precapH.stats)}, flag ${JSON.stringify(flagH13)}`,
+        );
+      } finally {
+        await cleanup([energieMsg, espoirMsg, ...recapIds], vicSnap, vicFlags, atkSnap, atkFlags);
+      }
+    });
+
     // ─────────────── world-restoration self-checks (stats AND flags AND chat leak) ───────────────
 
     const endStats = await fw.executeInFoundry(
@@ -791,7 +851,7 @@ async function main(Framework) {
     );
 
     const endFlags = await fw.executeInFoundry(snapshotActorsModuleFlagsInPage, FOUR_IDS);
-    const flagsOk = FOUR_IDS.every((id) => entriesEqual(endFlags[id], bootFlags[id]));
+    const flagsOk = FOUR_IDS.every((id) => flagNamespacesEqual(endFlags[id], bootFlags[id]));
     push(
       'poisoning self-check: all FOUR actors knight-damage FLAG namespaces byte-identical to their boot baselines (the atk-pnj one is the case1/case2 write target)',
       flagsOk,

@@ -271,3 +271,66 @@ describe('handleClickRevertDamage via the registered renderChatMessageHTML hook 
     expect(recordedQueries()).toEqual([]);
   });
 });
+
+describe('death reminder card via the registered preCreateActiveEffect hook — generateReminderMessage format (knight-damage.js:120-151)', () => {
+  // The FLAGLESS death-card format (French header bytes, trunc(value/6) d6-restore lines, the
+  // 0-value-key skip, the `_`->`.` uuid round-trip) is pinned ONLY by the e2e reminders suite,
+  // which NEVER runs in CI — this pin closes that blind spot against the real registrations,
+  // using the stubbed bare-global fromUuid + the ChatMessage.create recorder.
+  async function fireDead(effect) {
+    const hooks = registeredHooks('preCreateActiveEffect');
+    expect(hooks).toHaveLength(1);
+    await hooks[0].fn(effect);
+    // generateReminderMessage is fired WITHOUT await in the hook's stats loop AND suspends
+    // itself at the per-key `await fromUuid`: flush microtasks plus one macrotask so every
+    // recorded ChatMessage.create has landed before the assertions.
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  }
+
+  it('a `Dead` effect on an actor holding an energie reminder map emits EXACTLY ONE flagless chat card: EXACT header, one line per NONZERO key with trunc/6 d6 and the _->. round-trip NAME, the 0-value key skipped BEFORE any fromUuid (its uuid is not even registered), the undefined-flag espoir loop silent', async () => {
+    registerUuid(
+      'Actor.actor-veh',
+      makeActor('vehicule', {}, { id: 'actor-veh', uuid: 'Actor.actor-veh', name: 'veh-name' }),
+    );
+    registerUuid(
+      'Actor.actor-atk',
+      makeActor('pnj', {}, { id: 'actor-atk', uuid: 'Actor.actor-atk', name: 'atk-name' }),
+    );
+    const dying = makeActor(
+      'knight',
+      {},
+      {
+        id: 'actor-dying',
+        uuid: 'Actor.actor-dying',
+        name: 'dying-name',
+        flags: {
+          'knight-damage': {
+            // Keys are uuids with `.`->`_` (ids deliberately `_`-free, like every seed id):
+            // round-trip back to the registered 'Actor.actor-veh'/'Actor.actor-atk' uuids. The
+            // 0-value key's uuid is deliberately NOT registered: a skip implemented AFTER
+            // fromUuid would crash on null.name instead of passing.
+            energie: { 'Actor_actor-veh': 5, 'Actor_actor-atk': 13, 'Actor_actor-gone': 0 },
+          },
+        },
+      },
+    );
+
+    await fireDead({ name: 'Dead', target: dying });
+
+    const messages = recordedMessages();
+    expect(messages).toHaveLength(1); // espoir flag undefined -> that loop iteration emits nothing
+    // Death cards are FLAGLESS (no flags in the create data) — why the e2e leak scan must
+    // marker-scan them instead of filtering on isRecap.
+    expect(messages[0].flags).toBeUndefined();
+    expect(messages[0].content).toBe(
+      "<div>Dégâts d'energie infligés :</div><div>veh-name : 5 (0d6)</div><div>atk-name : 13 (2d6)</div>",
+    );
+  });
+
+  it('a NOT-Dead effect name and a Dead effect on an actor WITHOUT reminder flags both emit NOTHING (name gate + undefined-flag early return)', async () => {
+    const plain = makeActor('knight', {}, { id: 'actor-plain', uuid: 'Actor.actor-plain', name: 'plain' });
+    await fireDead({ name: 'Pas Dead', target: plain });
+    await fireDead({ name: 'Dead', target: plain });
+    expect(recordedMessages()).toEqual([]);
+  });
+});
