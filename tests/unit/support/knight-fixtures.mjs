@@ -22,9 +22,14 @@ export const VICTIM_UUID = 'Scene.scene-1.Token.token-def.Actor.actor-def';
 
 // Recorded contract: the live attack fixture (metadata header + stripped message).
 const RECORDED = loadRecordedFixture(STANDARD_FIXTURE_NAME);
-// Shallow-freeze the meta: the message side is deep-cloned per call below, but a consumer must
-// not be able to mutate the recording context (versions, dice plan) that contract tests pin.
-export const RECORDED_FIXTURE_META = Object.freeze(RECORDED.meta);
+// Deep-freeze the meta: the message side is deep-cloned per call below, but a consumer must not
+// be able to mutate the recording context that contract tests pin (dicePlan.expectedTargetValue
+// and weaponItemSeed.system.effets.raw are nested reads — a shallow freeze would not protect them).
+function deepFreeze(value) {
+  for (const inner of Object.values(value)) if (inner && typeof inner === 'object') deepFreeze(inner);
+  return Object.freeze(value);
+}
+export const RECORDED_FIXTURE_META = deepFreeze(RECORDED.meta);
 const RECORDED_MESSAGE = RECORDED.message;
 
 /**

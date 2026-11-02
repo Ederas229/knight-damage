@@ -69,14 +69,18 @@ export const createWeaponInPage = async (actorId, weaponData) => {
 
   // v13+: actor.items is a read-only Collection; creation goes through
   // createEmbeddedDocuments, and {keepId: true} honors our pinned _id (byte-stable
-  // re-recordings). If a build still refuses it, fall back to an auto id (then weapon ids
-  // drift between runs).
+  // re-recordings). When the world already holds that _id (a record:e2e run without setup:e2e
+  // between), v14 REJECTS the create — do NOT swallow it into an auto-id fallback: that is
+  // exactly how a stale-world re-record used to drift silently (review 2). Let it throw.
   const seed = { name: weaponData.name, type: weaponData.type, system: weaponData.system };
-  let created = [];
+  let created;
   try {
     created = await actor.createEmbeddedDocuments('Item', [{ ...seed, _id: weaponData._id }], { keepId: true });
-  } catch {
-    created = await actor.createEmbeddedDocuments('Item', [seed]);
+  } catch (err) {
+    throw new Error(
+      `pinned weapon _id ${weaponData._id} could not be created on ${actorId}: ${err.message} — ` +
+        'the test world is not fresh; run `npm run setup:e2e` before `npm run record:e2e`',
+    );
   }
   const item = created[0];
   if (!item) throw new Error('createEmbeddedDocuments("Item") returned nothing');

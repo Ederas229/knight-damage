@@ -30,7 +30,6 @@ import { spawn } from 'node:child_process';
 import { rmSync } from 'node:fs';
 import net from 'node:net';
 import path from 'node:path';
-import { acquireSpawnMutex } from './spawn-lock.mjs';
 
 /* global process */
 
@@ -70,8 +69,10 @@ export function respawnPreservingSymlinks() {
 
 /**
  * Load the framework (call ONLY from the symlink-preserving branch) and return the patched
- * subclass. The chrome-profile lives in the framework clone; its path is derived from
- * config.foundryNodePath so no absolute machine path enters the repo.
+ * subclass. The chrome-profile lives in the worktree-local test-data dir (derived from
+ * config.testDataPath) so no absolute machine path enters the repo and concurrent worktrees
+ * never share a profile; the shared clone is only ever read (server app + dice extension).
+ * Entry scripts acquire the ownership mutex (support/spawn-lock.mjs) BEFORE calling start().
  */
 export async function loadFramework() {
   const { FoundryTestFramework } = await import('foundryvtt-test-framework');
@@ -82,11 +83,8 @@ export async function loadFramework() {
       const { foundryNodePath, testDataPath, foundryServerPort } = this.config;
       const port = foundryServerPort ?? 30000;
 
-      // Ownership first (see support/spawn-lock.mjs): the port probe below only proves no server is
-      // LISTENING yet — a booting server from a concurrent e2e run would slip through, so the
-      // repo-root mutex is what makes purging options.json.lock safe.
-      acquireSpawnMutex();
-
+      // Precondition: the ENTRY SCRIPT already acquired the ownership mutex (support/spawn-lock.mjs)
+      // — acquiring here would be skipped by start() in serverAlreadyRunning mode.
       // Gate against back-to-back runs: stop() sends SIGTERM, and on Windows the data-dir lock
       // (Foundry proper-lockfiles Config/options.json -> options.json.lock/ for up to `stale: 1e4`ms)
       // plus the LISTEN socket can briefly outlive the kill. Wait for the port to free, then
@@ -158,10 +156,14 @@ export async function loadFramework() {
     }
 
     async _launchBrowser() {
-      const { diceOverrideExtensionPath, headless, foundryNodePath } = this.config;
-      // Same persistent profile the upstream base uses (chrome-profile/ at the framework clone
-      // root, next to FoundryVTT-Node/), but computed from config so no absolute path is hardcoded.
-      const chromeProfilePath = path.resolve(foundryNodePath, '..', 'chrome-profile');
+      const { diceOverrideExtensionPath, headless, testDataPath } = this.config;
+      // Per-WORKTREE profile inside the (gitignored) test-data dir — deliberately NOT the upstream
+      // location (chrome-profile/ at the shared framework-clone root): two checkouts running the
+      // suite against the ONE canonical clone would launch two launchPersistentContext calls on one
+      // profile ("profile in use"). test-data/ is worktree-local and wiped by setup:e2e, so each run
+      // starts from a fresh profile anyway; the clone itself (FoundryVTT-Node, dice extension) stays
+      // read-only and is safe to share.
+      const chromeProfilePath = path.join(testDataPath, 'chrome-profile');
 
       console.log('[foundryvtt-test-framework] Launching browser...');
       this.context = await chromium.launchPersistentContext(chromeProfilePath, {

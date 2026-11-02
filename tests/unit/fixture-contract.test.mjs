@@ -37,10 +37,11 @@ describe('recorded knight attack fixture = standard knight message contract', ()
     expect(typeof target.value).toBe('number');
     expect(Number.isFinite(target.value)).toBe(true);
     expect(target.value).toBeGreaterThan(0);
-    if (RECORDED_FIXTURE_META.diceOverrideApplied) {
-      // The recorded dice plan pinned every die: the damage value is fully deterministic.
-      expect(target.value).toBe(RECORDED_FIXTURE_META.dicePlan.expectedTargetValue);
-    }
+    // UNCONDITIONAL pins: the recorder's integrity gate runs before its write, so a fixture with
+    // diceOverrideApplied=false can never reach the tracked file — a conditional pin here would be
+    // a pollution hole (review 2). The dice plan pinned every die: the damage value is deterministic.
+    expect(RECORDED_FIXTURE_META.diceOverrideApplied).toBe(true);
+    expect(target.value).toBe(RECORDED_FIXTURE_META.dicePlan.expectedTargetValue);
   });
 
   it('attacker flags carry a pnj (NOT knight) actor with its world _id — the module button gate', () => {

@@ -10,10 +10,12 @@
 // Pass KDT_E2E_RAW_DUMP=1 to also dump the unstripped message object under test-data/recordings/
 // (gitignored) for debugging.
 
-import { mkdirSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, renameSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import config from './config.mjs';
+import { acquireSpawnMutex } from './support/spawn-lock.mjs';
 import { loadFramework, respawnPreservingSymlinks } from './support/framework.mjs';
+import { loadRecordedFixture } from './support/fixture-store.mjs';
 import {
   ATTACKER_ACTOR_ID,
   ATTACKER_TOKEN_NAME,
@@ -48,6 +50,7 @@ if (respawnPreservingSymlinks()) {
 }
 
 async function main(Framework) {
+  acquireSpawnMutex(); // ownership before ANYTHING (see support/spawn-lock.mjs)
   const fw = new Framework(config);
 
   try {
@@ -103,11 +106,12 @@ async function main(Framework) {
     console.log(
       `[record] weapon item id=${weaponInfo.itemId} pinnedId=${weaponInfo.keptRequestedId} effets.raw=${JSON.stringify(weaponInfo.raw)}`,
     );
-    // HARD guard: Foundry silently assigns a fresh random _id when the requested one is already
-    // taken — that happens when record:e2e runs twice without setup:e2e between (test-data
-    // persists; the world already holds the standard weapon). A drifted weapon id corrupts the
-    // byte-stable fixture contract (meta.weaponItemId + flags.knight.weapon.id + the actor item
-    // snapshot would all differ), so fail loudly instead of recording a polluted message.
+    // HARD guard (belt after the braces): v14 REJECTS a keepId create whose _id already exists
+    // (test-data persists between records — running record:e2e twice without setup:e2e in
+    // between hits this), and createWeaponInPage now lets that rejection throw. This guard
+    // additionally catches any future path where a non-pinned id sneaks through: a drifted weapon
+    // id would corrupt the byte-stable fixture contract (meta.weaponItemId +
+    // flags.knight.weapon.id + the actor item snapshot would all differ).
     if (!weaponInfo.keptRequestedId)
       throw new Error(
         `weapon _id "${STANDARD_WEAPON._id}" could not be pinned (got "${weaponInfo.itemId}") — the test world likely already holds a weapon from an earlier record:e2e run; re-run \`npm run setup:e2e\` first (fixture byte-stability requires a fresh world copy)`,
@@ -171,6 +175,9 @@ async function main(Framework) {
       ...clean,
     });
 
+    const fileName = fixtureFileName(versions.knight);
+    const outPath = path.join(FIXTURES_DIR, fileName);
+
     const failures = [];
     if (!diceOverrideApplied) failures.push(`target value ${target.value} != expected ${EXPECTED_TARGET_VALUE}`);
     if (!/Dégâts<\/div>/.test(clean.content)) failures.push('content lacks the French Dégâts</div> fragment');
@@ -179,8 +186,23 @@ async function main(Framework) {
     if (!liveButtons || liveButtons.length < 5)
       failures.push(`module buttons missing on the live message: ${liveButtons}`);
 
-    const fileName = fixtureFileName(versions.knight);
-    const outPath = path.join(FIXTURES_DIR, fileName);
+    // Drift guard (review 2): the fresh-world assumption only protects against WEAPON residue —
+    // a Phase-3 damage case that does not revert mutates the victim actor (embedded snapshot
+    // flags.knight.actor + targets[].aspects), and the weapon-pin guard cannot see that. If a
+    // baseline fixture already exists, its victim/attacker subtrees must match or nothing writes.
+    if (existsSync(outPath)) {
+      const { message: baseline } = loadRecordedFixture(fileName);
+      const driftKey = (msg) =>
+        JSON.stringify({
+          victimAspects: msg.flags.knight.targets.find((t) => t.id === VICTIM_TOKEN_ID)?.aspects ?? null,
+          attackerSnapshot: msg.flags.knight.actor,
+        });
+      if (driftKey(clean) !== driftKey(baseline))
+        failures.push(
+          'world state drifted from the committed baseline (victim aspects / attacker snapshot changed — ' +
+            'a previous run mutated the actors); run `npm run setup:e2e` first',
+        );
+    }
 
     if (process.env.KDT_E2E_RAW_DUMP) {
       // Raw dumps are gitignored test-data artifacts: useful even for a FAILED recording.
@@ -195,8 +217,13 @@ async function main(Framework) {
       console.log(`\nE2E RECORD: FAIL — baseline fixture NOT touched (${failures.join('; ')})`);
       process.exitCode = 1;
     } else {
+      // ATOMIC publish: write beside + rename over. The unit suite reads this file at import
+      // time (fixture-store), and the mutex only guards e2e scripts — a concurrent `npm test` /
+      // pre-commit vitest must never observe a half-written JSON.
       mkdirSync(FIXTURES_DIR, { recursive: true });
-      writeFileSync(outPath, `${JSON.stringify(fixture, null, 2)}\n`, 'utf8');
+      const tmpPath = `${outPath}.tmp`;
+      writeFileSync(tmpPath, `${JSON.stringify(fixture, null, 2)}\n`, 'utf8');
+      renameSync(tmpPath, outPath);
       console.log(`[record] wrote ${path.relative(process.cwd(), outPath)}`);
       console.log(`\nE2E RECORD: PASS (${fileName})`);
       process.exitCode = 0;

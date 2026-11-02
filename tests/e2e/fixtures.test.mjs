@@ -14,6 +14,7 @@
 
 import config from './config.mjs';
 import { loadFramework, respawnPreservingSymlinks } from './support/framework.mjs';
+import { acquireSpawnMutex } from './support/spawn-lock.mjs';
 import { loadRecordedFixture, STANDARD_FIXTURE_NAME } from './support/fixture-store.mjs';
 
 /* global process */
@@ -49,6 +50,7 @@ const MODULE_REGEXES = [
 ];
 
 async function main(Framework) {
+  acquireSpawnMutex(); // ownership before ANYTHING (see support/spawn-lock.mjs)
   const fw = new Framework(config);
   const results = [];
 

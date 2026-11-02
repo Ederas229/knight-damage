@@ -10,6 +10,7 @@
 
 import config from './config.mjs';
 import { loadFramework, respawnPreservingSymlinks } from './support/framework.mjs';
+import { acquireSpawnMutex } from './support/spawn-lock.mjs';
 
 /* global process */
 
@@ -27,6 +28,7 @@ if (respawnPreservingSymlinks()) {
 }
 
 async function main(Framework) {
+  acquireSpawnMutex(); // ownership before ANYTHING (see support/spawn-lock.mjs)
   const fw = new Framework(config);
   const results = [];
 

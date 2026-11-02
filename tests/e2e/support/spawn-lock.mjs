@@ -1,14 +1,22 @@
-// Repo-root mutex guarding ALL e2e entry scripts (setup/record/smoke/fixtures) — review finding:
-// the boot gate's stale-lock purge is only safe when no OTHER e2e run is active. Two scripts
-// launched concurrently (two terminals) could otherwise race: script B's TCP port probe sees the
-// port free while script A's server is still booting (spawn -> lock-acquire -> listen takes ~2 s),
-// B then purges the lock A just took, and two Foundry servers share one test-data/ LevelDB dir.
+// Repo-root ownership mutex for ALL e2e entry scripts (setup/record/smoke/fixtures).
+// Two Foundry servers must never share one test-data/ LevelDB dir, and two chrome launches must
+// never share one profile: every e2e script acquires this BEFORE touching anything.
+// (Historical race that motivated it: the boot gate's stale-lock purge saw a free port while
+// another run's server was still BOOTING — spawn -> lock-acquire -> listen takes ~2 s — and
+// purged that run's active options.json.lock. The port probe cannot distinguish "booting" from
+// "absent", hence ownership bookkeeping instead of probing.)
 //
-// The mutex lives at the REPO ROOT (`<repo>/.e2e-spawn.lock/`, git-ignored), NOT inside
-// testDataPath — runSetup wipes test-data mid-run, which would sweep a mutex placed there.
-// mkdir() is atomic; a crashed run leaves the mutex behind, so it self-heals after STALE_MS.
+// Placement: repo root (`<repo>/.e2e-spawn.lock/`, git-ignored). Each worktree owns its own
+// test-data/ and chrome profile, so the mutex only needs to serialize runs of the SAME worktree;
+// the shared sibling clone (FoundryVTT-Node + dice extension) is read-only to e2e runs.
+//
+// Liveness protocol (review 2, findings B-1/B-2):
+// - The owner writes its PID into <mutex>/pid.
+// - A second acquirer that finds the mutex checks age FIRST (fresh -> simply held), and only in
+//   the stale window probes the PID: a LIVE owner (long legitimate run) blocks self-healing; a
+//   dead owner's lock is purged. Bounded retries — no unbounded recursion on stat hiccups.
 
-import { mkdirSync, rmSync, statSync } from 'node:fs';
+import { mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -16,27 +24,49 @@ import { fileURLToPath } from 'node:url';
 
 const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..', '..');
 export const MUTEX_PATH = path.join(REPO_ROOT, '.e2e-spawn.lock');
+const PID_FILE = path.join(MUTEX_PATH, 'pid');
 const STALE_MS = 15 * 60 * 1000;
 
-export function acquireSpawnMutex() {
+function heldError(detail) {
+  return new Error(
+    `another e2e run owns the test data (${MUTEX_PATH}) — ${detail}; if a previous run crashed, ` +
+      'delete .e2e-spawn.lock manually',
+  );
+}
+
+function ownerAlive() {
   try {
-    mkdirSync(MUTEX_PATH);
-  } catch (err) {
-    if (err.code !== 'EEXIST') throw err;
-    let mtimeMs = null;
-    try {
-      mtimeMs = statSync(MUTEX_PATH).mtimeMs;
-    } catch {
-      return acquireSpawnMutex(); // vanished between EEXIST and stat: another run just released
-    }
-    const ageMs = Date.now() - mtimeMs;
-    if (ageMs < STALE_MS)
-      throw new Error(
-        `another e2e run owns the test data (lock at ${MUTEX_PATH}, age ${Math.round(ageMs / 1000)}s) — ` +
-          'e2e scripts must not run concurrently; if a previous run crashed, delete .e2e-spawn.lock manually',
-      );
-    rmSync(MUTEX_PATH, { recursive: true, force: true }); // crashed run older than STALE_MS: self-heal
-    mkdirSync(MUTEX_PATH);
+    const pid = Number.parseInt(readFileSync(PID_FILE, 'utf8'), 10);
+    if (!Number.isInteger(pid) || pid <= 0) return false;
+    process.kill(pid, 0); // signal 0 = liveness probe only
+    return true;
+  } catch {
+    return false;
   }
-  process.once('exit', () => rmSync(MUTEX_PATH, { recursive: true, force: true }));
+}
+
+export function acquireSpawnMutex() {
+  for (let attempt = 0; attempt < 3; attempt++) {
+    try {
+      mkdirSync(MUTEX_PATH);
+      writeFileSync(PID_FILE, String(process.pid), 'utf8');
+      process.once('exit', () => rmSync(MUTEX_PATH, { recursive: true, force: true }));
+      return;
+    } catch (err) {
+      if (err.code !== 'EEXIST') throw err;
+      let ageMs;
+      try {
+        ageMs = Date.now() - statSync(MUTEX_PATH).mtimeMs;
+      } catch {
+        continue; // vanished mid-race (or transient stat hiccup): retry mkdir, bounded attempts
+      }
+      if (ageMs < STALE_MS) throw heldError(`held for ${Math.round(ageMs / 1000)}s`);
+      if (ownerAlive())
+        throw heldError(
+          `owner pid still alive after ${Math.round(ageMs / 60000)}min — a legitimately long run needs STALE_MS raised`,
+        );
+      rmSync(MUTEX_PATH, { recursive: true, force: true }); // stale AND owner dead: self-heal, retry once
+    }
+  }
+  throw heldError('lock keeps reappearing between attempts — concurrent e2e launch?');
 }
