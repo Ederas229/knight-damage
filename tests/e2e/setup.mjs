@@ -21,10 +21,33 @@ async function exists(p) {
   }
 }
 
+/** Repo-committed seed world ids (dirs under tests/e2e/world-seed/). */
+async function listSeedWorlds(repoRoot) {
+  const seedRoot = path.join(repoRoot, 'tests', 'e2e', 'world-seed');
+  if (!(await exists(seedRoot))) return [];
+  const entries = await (await import('node:fs/promises')).readdir(seedRoot, { withFileTypes: true });
+  return entries.filter((e) => e.isDirectory()).map((e) => e.name);
+}
+
 async function main() {
   // One e2e actor at a time (repo-root .e2e-spawn.lock) — wiping test-data while another run's
   // Foundry server holds it is exactly the corruption class this mutex prevents.
   acquireSpawnMutex();
+
+  const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
+  const seedWorldIds = await listSeedWorlds(repoRoot);
+  // A world that has a repo-committed seed is NEVER copied from sourceDataPath: runSetup's copy of
+  // the live Data/worlds/<id> tree races the running Foundry desktop app (observed live: EBUSY on a
+  // world's LevelDB LOG file -> half-copied world). The seed overlay below is the only source.
+  const effectiveConfig = {
+    ...config,
+    worldsToCopy: (config.worldsToCopy ?? []).filter((id) => !seedWorldIds.includes(id)),
+  };
+  if (effectiveConfig.worldsToCopy.length !== (config.worldsToCopy ?? []).length) {
+    console.log(
+      `setup:e2e: copying worlds from sourceDataPath skipped for repo-seeded world(s): ${seedWorldIds.join(', ')} (repo seed is the source of truth).`,
+    );
+  }
 
   const checks = [
     ['license.json', path.join(config.sourceDataPath, 'Config', 'license.json')],
@@ -36,7 +59,7 @@ async function main() {
       `module "${id}"`,
       path.join(config.sourceDataPath, 'Data', 'modules', id),
     ]),
-    ...(config.worldsToCopy ?? []).map((id) => [
+    ...effectiveConfig.worldsToCopy.map((id) => [
       `world "${id}"`,
       path.join(config.sourceDataPath, 'Data', 'worlds', id),
     ]),
@@ -55,6 +78,10 @@ async function main() {
   }
 
   // runSetup warns (does not throw) when it skips an asset — treat any warning as fatal.
+  // BUT its file-copy loop CAN throw synchronously (EBUSY/EPERM when the live Foundry desktop app
+  // holds a source world file) — if that escaped the async wrapper, main() would resolve "green"
+  // over a half-copied world (observed live: EBUSY mid-world-copy -> world.json never written).
+  let setupError = null;
   const warnings = [];
   const originalWarn = console.warn;
   console.warn = (...args) => {
@@ -62,9 +89,23 @@ async function main() {
     originalWarn(...args);
   };
   try {
-    await runSetup(config);
+    await Promise.resolve()
+      .then(() => runSetup(effectiveConfig))
+      .catch((err) => {
+        setupError = err instanceof Error ? err : new Error(String(err?.stack ?? err));
+      });
   } finally {
     console.warn = originalWarn;
+  }
+
+  if (setupError) {
+    console.error(`setup:e2e FAILED: runSetup threw while copying assets: ${setupError.message}`);
+    console.error(
+      'The test-data tree may now be HALF-COPIED (that is what makes Foundry report the world "not available to auto-launch").\n' +
+        'Most common cause: the live Foundry desktop app is holding a world/system file in sourceDataPath (EBUSY).\n' +
+        'Close the live Foundry app (or point sourceDataPath at a non-locked copy) and re-run setup:e2e.',
+    );
+    process.exit(1);
   }
 
   if (warnings.length) {
@@ -73,19 +114,30 @@ async function main() {
     process.exit(1);
   }
 
-  // World-seed overlay (review 3): runSetup copies the world from sourceDataPath — but that is
-  // untracked, machine-specific state. The REPO-COMMITTED seed (tests/e2e/world-seed/<id>/) is
-  // the reproducible source of truth, so when it exists it OVERWRITES the runSetup copy and the
-  // fixture chain becomes re-runnable on any machine with a licensed Foundry install. Pre-seed
-  // checkouts (or custom worlds without a seed) fall back to the runSetup copy — loudly noted.
-  const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
+  // World-seed overlay (review 3): the REPO-COMMITTED seed (tests/e2e/world-seed/<id>/) is the
+  // reproducible source of truth, so it is the ONLY source for a seeded world (the sourceDataPath
+  // copy for it was skipped above) and it OVERWRITES any stale test-data copy; the fixture chain
+  // is therefore re-runnable on any machine with a licensed Foundry install. Worlds configured in
+  // worldsToCopy without a seed fall back to the runSetup copy — loudly noted.
   for (const id of config.worldsToCopy ?? []) {
     const seedDir = path.join(repoRoot, 'tests', 'e2e', 'world-seed', id);
     const targetDir = path.join(config.testDataPath, 'Data', 'worlds', id);
     if (await exists(seedDir)) {
       await rm(targetDir, { recursive: true, force: true });
       await cp(seedDir, targetDir, { recursive: true });
-      console.log(`setup:e2e: world "${id}" overlaid with the repo-committed seed (source of truth).`);
+      // LevelDB hygiene: a previous boot's collection JOURNAL/SST directories (data/<collection>/)
+      // replay ON TOP of an overwritten .db — a stale actors/000005.ldb resurrects the previous
+      // run's mutated actor state and silently defeats the seed overlay. The seed ships bare .db
+      // files only, so every journal directory under data/ is by definition stale.
+      const dataDir = path.join(targetDir, 'data');
+      if (await exists(dataDir)) {
+        for (const entry of await (await import('node:fs/promises')).readdir(dataDir, { withFileTypes: true })) {
+          if (entry.isDirectory()) await rm(path.join(dataDir, entry.name), { recursive: true, force: true });
+        }
+      }
+      console.log(
+        `setup:e2e: world "${id}" overlaid with the repo-committed seed (source of truth; stale LevelDB journals cleared).`,
+      );
     } else {
       console.warn(
         `setup:e2e: WARNING — no repo seed at tests/e2e/world-seed/${id}/; using the machine-local ` +

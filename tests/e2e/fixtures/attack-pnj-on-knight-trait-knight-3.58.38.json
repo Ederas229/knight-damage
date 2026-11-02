@@ -1,0 +1,1786 @@
+{
+  "fixtureMeta": {
+    "kind": "knight-damage/attack-damage-message",
+    "recordedFromWorld": "knight-damage-test",
+    "knightSystemVersion": "3.58.38",
+    "coreVersion": "14.369",
+    "attackerActorId": "kdtAtkPnjAAAAAAA",
+    "victimTokenId": "tkVicKnightAAAAA",
+    "weaponItemSeed": {
+      "_id": "kdtWpnTraitAAAAA",
+      "name": "Kdt Arme Trait",
+      "type": "arme",
+      "system": {
+        "degats": {
+          "dice": 3,
+          "fixe": 2
+        },
+        "violence": {
+          "dice": 2,
+          "fixe": 0
+        },
+        "effets": {
+          "raw": [
+            "percearmure 40",
+            "penetrant 6",
+            "destructeur"
+          ],
+          "custom": []
+        }
+      }
+    },
+    "weaponItemId": "kdtWpnTraitAAAAA",
+    "dicePlan": {
+      "attack": {
+        "faces": 6,
+        "count": 3,
+        "total": 7,
+        "formula": "3D6"
+      },
+      "damage": {
+        "faces": 6,
+        "count": 3,
+        "total": 12
+      },
+      "traitSubRoll": {
+        "faces": 6,
+        "count": 2,
+        "total": 6
+      },
+      "expectedTargetValue": 14,
+      "expectedTraitValue": 6
+    },
+    "diceOverrideApplied": true,
+    "notes": "Damage message recorded from a scripted real attack (atk-pnj -> vic-knight) through the knight system's own RollKnight.doRoll + chat .degats button flow. Loaders must strip this fixtureMeta key. Re-record after any knight system upgrade.",
+    "weaponTraits": [
+      "percearmure 40",
+      "penetrant 6",
+      "destructeur"
+    ],
+    "expectedTraitValue": 6
+  },
+  "speaker": {
+    "actor": "kdtAtkPnjAAAAAAA",
+    "token": null,
+    "alias": "atk-pnj",
+    "scene": null
+  },
+  "content": "<div class=\"knight-roll\">\n        <div class=\"dice-flavor\">Kdt Arme Trait : Attaque : Dégâts</div>\n\n\n    <section class=\"content\" data-index>\n        <div class=\"dice-result\">\n        <div class=\"dice-formula\">Dégâts</div>\n        <div class=\"dice-tooltip\">\n    <section class=\"tooltip-part\">\n        <div class=\"dice\">\n            <header class=\"part-header flexrow\">\n                <span class=\"part-formula\" title=\"(Base)D6 + Base + Chair\">3D6 + 2 + 0</span>\n                \n                <span class=\"part-total\">14</span>\n            </header>\n            <ol class=\"dice-rolls\">\n                    <li class=\"roll d6\">4</li>\n                    <li class=\"roll d6\">4</li>\n                    <li class=\"roll d6\">4</li>\n            </ol>\n        </div>\n    </section>\n</div>\n        <h4 class=\"dice-total\">\n            14\n        </h4>\n        </div>\n\n        <div class=\"listTargets dice-formula\">\n            <div class=\"target\" data-id=\"tkVicKnightAAAAA\">\n                <span class=\"label\">vic-knight</span>\n                <span class=\"dmg\">14</span>\n            </div>\n                <div class=\"btn\">\n                    <button type=\"action\" class=\"setDegats\" data-id=\"tkVicKnightAAAAA\" data-dmg=\"14\" data-dmgtype=\"damage\">Faire les dégâts</button>\n                </div>\n        </div>\n\n\n                <div class=\"onlyGm btn\" style=\"width:200%\">\n                    <button type=\"action\" class=\"setDegatsAllTargets\" data-alltargets=\"tkVicKnightAAAAA-14\" data-dmgtype=\"damage\">Dégâts pour toutes les cibles</button>\n                </div>\n\n\n\n    </section>\n\n\n\n\n    <div class=\"details withTooltip\" data-key=\"destructeur\">\n            <span class=\"label\">Destructeur</span>\n            <span class=\"value\">+6</span>\n        <span class=\"description \">Lorsque les dégâts impactent les points d'armure de la cible.</span>\n        <div class=\"dice-tooltip\">\n    <section class=\"tooltip-part\">\n        <div class=\"dice\">\n            <header class=\"part-header flexrow\">\n                <span class=\"part-formula\" title=\"2D6\">2D6</span>\n                \n                <span class=\"part-total\">6</span>\n            </header>\n            <ol class=\"dice-rolls\">\n                    <li class=\"roll d6\">3</li>\n                    <li class=\"roll d6\">3</li>\n            </ol>\n        </div>\n    </section>\n</div>\n    </div>\n    <div class=\"details \" data-key=\"penetrant 6\">\n            <span class=\"label merge\">Pénétrant 6</span>\n        <span class=\"description merge\">L'arme ignore une certaine valeur de champ de force, X représentant cette valeur.</span>\n        \n    </div>\n    <div class=\"details \" data-key=\"percearmure 40\">\n            <span class=\"label merge\">Perce Armure 40</span>\n        <span class=\"description merge\">L'arme ignore une certaine valeur d'armure, X représentant cette valeur..</span>\n        \n    </div>\n\n</div>",
+  "sound": "sounds/dice.wav",
+  "rolls": [
+    "{\"class\":\"Roll\",\"options\":{},\"dice\":[],\"formula\":\"2d6\",\"terms\":[{\"class\":\"Die\",\"options\":{\"flavor\":null},\"evaluated\":true,\"number\":2,\"faces\":6,\"modifiers\":[],\"results\":[{\"result\":3,\"active\":true},{\"result\":3,\"active\":true}]}],\"total\":6,\"evaluated\":true}",
+    "{\"class\":\"Roll\",\"options\":{},\"dice\":[],\"formula\":\"3d6\",\"terms\":[{\"class\":\"Die\",\"options\":{\"flavor\":null},\"evaluated\":true,\"number\":3,\"faces\":6,\"modifiers\":[],\"results\":[{\"result\":4,\"active\":true},{\"result\":4,\"active\":true},{\"result\":4,\"active\":true}]}],\"total\":12,\"evaluated\":true}"
+  ],
+  "whisper": [],
+  "blind": false,
+  "type": "base",
+  "system": {},
+  "style": 0,
+  "flavor": "",
+  "emote": false,
+  "flags": {
+    "knight": {
+      "flavor": "Kdt Arme Trait : Attaque",
+      "total": 2,
+      "targets": [
+        {
+          "id": "tkVicKnightAAAAA",
+          "name": "vic-knight",
+          "aspects": {
+            "chair": {
+              "base": 2,
+              "mod": 0,
+              "bonus": {},
+              "malus": {},
+              "optimisation": {
+                "bonus": {},
+                "malus": {}
+              },
+              "override": {},
+              "max": 9,
+              "value": 0,
+              "description": "",
+              "caracteristiques": {
+                "deplacement": {
+                  "base": 1,
+                  "bonus": {},
+                  "malus": {},
+                  "optimisation": {
+                    "bonus": {},
+                    "malus": {}
+                  },
+                  "value": 0,
+                  "override": {},
+                  "overdrive": {
+                    "base": 0,
+                    "bonus": {},
+                    "malus": {},
+                    "override": {},
+                    "value": 0
+                  }
+                },
+                "force": {
+                  "base": 1,
+                  "bonus": {},
+                  "malus": {},
+                  "optimisation": {
+                    "bonus": {},
+                    "malus": {}
+                  },
+                  "value": 0,
+                  "override": {},
+                  "overdrive": {
+                    "base": 0,
+                    "bonus": {},
+                    "malus": {},
+                    "override": {},
+                    "value": 0
+                  }
+                },
+                "endurance": {
+                  "base": 1,
+                  "bonus": {},
+                  "malus": {},
+                  "optimisation": {
+                    "bonus": {},
+                    "malus": {}
+                  },
+                  "value": 0,
+                  "override": {},
+                  "overdrive": {
+                    "base": 0,
+                    "bonus": {},
+                    "malus": {},
+                    "override": {},
+                    "value": 0
+                  }
+                }
+              }
+            },
+            "bete": {
+              "base": 2,
+              "mod": 0,
+              "bonus": {},
+              "malus": {},
+              "optimisation": {
+                "bonus": {},
+                "malus": {}
+              },
+              "override": {},
+              "max": 9,
+              "value": 0,
+              "description": "",
+              "caracteristiques": {
+                "combat": {
+                  "base": 1,
+                  "bonus": {},
+                  "malus": {},
+                  "optimisation": {
+                    "bonus": {},
+                    "malus": {}
+                  },
+                  "value": 0,
+                  "override": {},
+                  "overdrive": {
+                    "base": 0,
+                    "bonus": {},
+                    "malus": {},
+                    "override": {},
+                    "value": 0
+                  }
+                },
+                "hargne": {
+                  "base": 1,
+                  "bonus": {},
+                  "malus": {},
+                  "optimisation": {
+                    "bonus": {},
+                    "malus": {}
+                  },
+                  "value": 0,
+                  "override": {},
+                  "overdrive": {
+                    "base": 0,
+                    "bonus": {},
+                    "malus": {},
+                    "override": {},
+                    "value": 0
+                  }
+                },
+                "instinct": {
+                  "base": 1,
+                  "bonus": {},
+                  "malus": {},
+                  "optimisation": {
+                    "bonus": {},
+                    "malus": {}
+                  },
+                  "value": 0,
+                  "override": {},
+                  "overdrive": {
+                    "base": 0,
+                    "bonus": {},
+                    "malus": {},
+                    "override": {},
+                    "value": 0
+                  }
+                }
+              }
+            },
+            "machine": {
+              "base": 2,
+              "mod": 0,
+              "bonus": {},
+              "malus": {},
+              "optimisation": {
+                "bonus": {},
+                "malus": {}
+              },
+              "override": {},
+              "max": 9,
+              "value": 0,
+              "description": "",
+              "caracteristiques": {
+                "tir": {
+                  "base": 1,
+                  "bonus": {},
+                  "malus": {},
+                  "optimisation": {
+                    "bonus": {},
+                    "malus": {}
+                  },
+                  "value": 0,
+                  "override": {},
+                  "overdrive": {
+                    "base": 0,
+                    "bonus": {},
+                    "malus": {},
+                    "override": {},
+                    "value": 0
+                  }
+                },
+                "savoir": {
+                  "base": 1,
+                  "bonus": {},
+                  "malus": {},
+                  "optimisation": {
+                    "bonus": {},
+                    "malus": {}
+                  },
+                  "value": 0,
+                  "override": {},
+                  "overdrive": {
+                    "base": 0,
+                    "bonus": {},
+                    "malus": {},
+                    "override": {},
+                    "value": 0
+                  }
+                },
+                "technique": {
+                  "base": 1,
+                  "bonus": {},
+                  "malus": {},
+                  "optimisation": {
+                    "bonus": {},
+                    "malus": {}
+                  },
+                  "value": 0,
+                  "override": {},
+                  "overdrive": {
+                    "base": 0,
+                    "bonus": {},
+                    "malus": {},
+                    "override": {},
+                    "value": 0
+                  }
+                }
+              }
+            },
+            "dame": {
+              "base": 2,
+              "mod": 0,
+              "bonus": {},
+              "malus": {},
+              "optimisation": {
+                "bonus": {},
+                "malus": {}
+              },
+              "override": {},
+              "max": 9,
+              "value": 0,
+              "description": "",
+              "caracteristiques": {
+                "aura": {
+                  "base": 1,
+                  "bonus": {},
+                  "malus": {},
+                  "optimisation": {
+                    "bonus": {},
+                    "malus": {}
+                  },
+                  "value": 0,
+                  "override": {},
+                  "overdrive": {
+                    "base": 0,
+                    "bonus": {},
+                    "malus": {},
+                    "override": {},
+                    "value": 0
+                  }
+                },
+                "parole": {
+                  "base": 1,
+                  "bonus": {},
+                  "malus": {},
+                  "optimisation": {
+                    "bonus": {},
+                    "malus": {}
+                  },
+                  "value": 0,
+                  "override": {},
+                  "overdrive": {
+                    "base": 0,
+                    "bonus": {},
+                    "malus": {},
+                    "override": {},
+                    "value": 0
+                  }
+                },
+                "sangFroid": {
+                  "base": 1,
+                  "bonus": {},
+                  "malus": {},
+                  "optimisation": {
+                    "bonus": {},
+                    "malus": {}
+                  },
+                  "value": 0,
+                  "override": {},
+                  "overdrive": {
+                    "base": 0,
+                    "bonus": {},
+                    "malus": {},
+                    "override": {},
+                    "value": 0
+                  }
+                }
+              }
+            },
+            "masque": {
+              "base": 2,
+              "mod": 0,
+              "bonus": {},
+              "malus": {},
+              "optimisation": {
+                "bonus": {},
+                "malus": {}
+              },
+              "override": {},
+              "max": 9,
+              "value": 0,
+              "description": "",
+              "caracteristiques": {
+                "discretion": {
+                  "base": 1,
+                  "bonus": {},
+                  "malus": {},
+                  "optimisation": {
+                    "bonus": {},
+                    "malus": {}
+                  },
+                  "value": 0,
+                  "override": {},
+                  "overdrive": {
+                    "base": 0,
+                    "bonus": {},
+                    "malus": {},
+                    "override": {},
+                    "value": 0
+                  }
+                },
+                "dexterite": {
+                  "base": 1,
+                  "bonus": {},
+                  "malus": {},
+                  "optimisation": {
+                    "bonus": {},
+                    "malus": {}
+                  },
+                  "value": 0,
+                  "override": {},
+                  "overdrive": {
+                    "base": 0,
+                    "bonus": {},
+                    "malus": {},
+                    "override": {},
+                    "value": 0
+                  }
+                },
+                "perception": {
+                  "base": 1,
+                  "bonus": {},
+                  "malus": {},
+                  "optimisation": {
+                    "bonus": {},
+                    "malus": {}
+                  },
+                  "value": 0,
+                  "override": {},
+                  "overdrive": {
+                    "base": 0,
+                    "bonus": {},
+                    "malus": {},
+                    "override": {},
+                    "value": 0
+                  }
+                }
+              }
+            }
+          },
+          "type": "knight",
+          "effets": [],
+          "ptsFaible": false,
+          "difficulty": 1,
+          "marge": 1,
+          "hit": true,
+          "defense": "vs Défense (1)",
+          "btn": [],
+          "listEffets": [],
+          "detailledEffets": [
+            {
+              "simple": "destructeur",
+              "key": "destructeur",
+              "value": "+6",
+              "label": "Destructeur",
+              "description": "Lorsque les dégâts impactent les points d'armure de la cible.",
+              "tooltip": "<div class=\"dice-tooltip\">\n    <section class=\"tooltip-part\">\n        <div class=\"dice\">\n            <header class=\"part-header flexrow\">\n                <span class=\"part-formula\" title=\"2D6\">2D6</span>\n                \n                <span class=\"part-total\">6</span>\n            </header>\n            <ol class=\"dice-rolls\">\n                    <li class=\"roll d6\">3</li>\n                    <li class=\"roll d6\">3</li>\n            </ol>\n        </div>\n    </section>\n</div>"
+            },
+            {
+              "simple": "penetrant",
+              "key": "penetrant 6",
+              "label": "Pénétrant 6",
+              "description": "L'arme ignore une certaine valeur de champ de force, X représentant cette valeur."
+            },
+            {
+              "simple": "percearmure",
+              "key": "percearmure 40",
+              "label": "Perce Armure 40",
+              "description": "L'arme ignore une certaine valeur d'armure, X représentant cette valeur.."
+            }
+          ],
+          "isValue": true,
+          "value": 14
+        }
+      ],
+      "attaque": [
+        {
+          "class": "Roll",
+          "options": {},
+          "dice": [],
+          "formula": "3d6",
+          "terms": [
+            {
+              "class": "Die",
+              "options": {
+                "flavor": null
+              },
+              "evaluated": true,
+              "number": 3,
+              "faces": 6,
+              "modifiers": [],
+              "results": [
+                {
+                  "result": 2,
+                  "active": true
+                },
+                {
+                  "result": 2,
+                  "active": true
+                },
+                {
+                  "result": 3,
+                  "active": true
+                }
+              ]
+            }
+          ],
+          "total": 7,
+          "evaluated": true
+        }
+      ],
+      "weapon": {
+        "label": "Kdt Arme Trait",
+        "portee": "contact",
+        "classes": "btnWpn",
+        "options": [],
+        "type": "contact",
+        "cout": 0,
+        "espoir": 0,
+        "bonus": {
+          "degats": {
+            "dice": 0,
+            "fixe": 0,
+            "titleDice": "",
+            "titleFixe": ""
+          },
+          "violence": {
+            "dice": 0,
+            "fixe": 0,
+            "titleDice": "",
+            "titleFixe": ""
+          }
+        },
+        "id": "kdtWpnTraitAAAAA",
+        "effets": {
+          "raw": [
+            "percearmure 40",
+            "penetrant 6",
+            "destructeur"
+          ],
+          "custom": []
+        },
+        "structurelles": {
+          "raw": [],
+          "custom": []
+        },
+        "ornementales": {
+          "raw": [],
+          "custom": []
+        },
+        "degats": {
+          "dice": 3,
+          "fixe": 2,
+          "addchair": true
+        },
+        "violence": {
+          "dice": 2,
+          "fixe": 0
+        },
+        "rollType": "damage"
+      },
+      "actor": {
+        "name": "atk-pnj",
+        "type": "pnj",
+        "img": "icons/svg/mystery-man-black.svg",
+        "system": {
+          "sante": {
+            "value": 10,
+            "base": 10,
+            "max": 16,
+            "mod": 0,
+            "bonusValue": 0,
+            "malusValue": 0,
+            "override": {},
+            "addHalf": 0,
+            "bonus": {
+              "user": 0
+            },
+            "malus": {
+              "user": 0
+            }
+          },
+          "armure": {
+            "value": 0,
+            "base": 0,
+            "max": 0,
+            "mod": 0,
+            "bonus": {
+              "user": 0
+            },
+            "malus": {
+              "user": 0
+            }
+          },
+          "energie": {
+            "value": 12,
+            "base": 12,
+            "max": 12,
+            "mod": 0,
+            "bonus": {
+              "user": 0
+            },
+            "malus": {
+              "user": 0
+            }
+          },
+          "version": 0,
+          "description": "",
+          "descriptionLimitee": "",
+          "defense": {
+            "base": 0,
+            "value": 0,
+            "valueWOMod": 0,
+            "mod": 0,
+            "malustotal": 0,
+            "iswatchtower": false,
+            "override": {},
+            "bonus": {
+              "user": 0,
+              "system": 0
+            },
+            "malus": {
+              "user": 0,
+              "system": 0
+            }
+          },
+          "reaction": {
+            "base": 0,
+            "value": 0,
+            "valueWOMod": 0,
+            "mod": 0,
+            "malustotal": 0,
+            "iswatchtower": false,
+            "override": {},
+            "bonus": {
+              "user": 0,
+              "system": 0
+            },
+            "malus": {
+              "user": 0,
+              "system": 0
+            }
+          },
+          "initiative": {
+            "complet": "3D6",
+            "base": 0,
+            "mod": 0,
+            "value": 0,
+            "dice": 0,
+            "diceBase": 3,
+            "diceMod": 0,
+            "diceBonus": {},
+            "diceMalus": {},
+            "bonus": {
+              "user": 0
+            },
+            "malus": {
+              "user": 0
+            },
+            "embuscade": {
+              "bonus": {},
+              "malus": {},
+              "diceBonus": {},
+              "diceMalus": {}
+            }
+          },
+          "limited": {
+            "showDescriptionFull": false,
+            "showDescriptionLimited": false,
+            "showPointsFaibles": false
+          },
+          "combat": {
+            "data": {
+              "degatsbonus": {
+                "dice": 0,
+                "fixe": 0
+              },
+              "violencebonus": {
+                "dice": 0,
+                "fixe": 0
+              },
+              "modificateur": 0,
+              "sacrifice": 0,
+              "succesbonus": 0,
+              "tourspasses": 1,
+              "type": "degats"
+            },
+            "armesimprovisees": {
+              "aspect": "chair",
+              "contact": "contact",
+              "distance": "tir",
+              "liste": {
+                "ai1": {
+                  "chair": [
+                    1,
+                    2
+                  ],
+                  "force": 1,
+                  "liste": {
+                    "1": {
+                      "utilisation": 3,
+                      "degats": {
+                        "dice": 4
+                      },
+                      "violence": {
+                        "dice": 4
+                      },
+                      "effets": {
+                        "raw": [],
+                        "custom": []
+                      }
+                    },
+                    "2": {
+                      "utilisation": 1,
+                      "degats": {
+                        "dice": 2
+                      },
+                      "violence": {
+                        "dice": 5
+                      },
+                      "effets": {
+                        "raw": [],
+                        "custom": []
+                      }
+                    },
+                    "3": {
+                      "utilisation": 2,
+                      "degats": {
+                        "dice": 4
+                      },
+                      "violence": {
+                        "dice": 4
+                      },
+                      "effets": {
+                        "raw": [],
+                        "custom": []
+                      }
+                    }
+                  }
+                },
+                "ai2": {
+                  "chair": [
+                    3,
+                    4
+                  ],
+                  "force": 2,
+                  "liste": {
+                    "1": {
+                      "utilisation": 3,
+                      "degats": {
+                        "dice": 6
+                      },
+                      "violence": {
+                        "dice": 4
+                      },
+                      "effets": {
+                        "raw": [],
+                        "custom": []
+                      }
+                    },
+                    "2": {
+                      "utilisation": 1,
+                      "degats": {
+                        "dice": 4
+                      },
+                      "violence": {
+                        "dice": 4
+                      },
+                      "effets": {
+                        "raw": [],
+                        "custom": []
+                      }
+                    },
+                    "3": {
+                      "utilisation": 2,
+                      "degats": {
+                        "dice": 5
+                      },
+                      "violence": {
+                        "dice": 5
+                      },
+                      "effets": {
+                        "raw": [],
+                        "custom": []
+                      }
+                    }
+                  }
+                },
+                "ai3": {
+                  "chair": [
+                    5,
+                    6
+                  ],
+                  "force": 3,
+                  "liste": {
+                    "1": {
+                      "utilisation": 3,
+                      "degats": {
+                        "dice": 7
+                      },
+                      "violence": {
+                        "dice": 5
+                      },
+                      "effets": {
+                        "raw": [],
+                        "custom": []
+                      }
+                    },
+                    "2": {
+                      "utilisation": 1,
+                      "degats": {
+                        "dice": 5
+                      },
+                      "violence": {
+                        "dice": 7
+                      },
+                      "effets": {
+                        "raw": [],
+                        "custom": []
+                      }
+                    },
+                    "3": {
+                      "utilisation": 2,
+                      "degats": {
+                        "dice": 6
+                      },
+                      "violence": {
+                        "dice": 6
+                      },
+                      "effets": {
+                        "raw": [],
+                        "custom": []
+                      }
+                    }
+                  }
+                },
+                "ai4": {
+                  "chair": [
+                    7,
+                    8
+                  ],
+                  "force": 4,
+                  "liste": {
+                    "1": {
+                      "utilisation": 1,
+                      "degats": {
+                        "dice": 7
+                      },
+                      "violence": {
+                        "dice": 9
+                      },
+                      "effets": {
+                        "raw": [],
+                        "custom": []
+                      }
+                    },
+                    "2": {
+                      "utilisation": 2,
+                      "degats": {
+                        "dice": 8
+                      },
+                      "violence": {
+                        "dice": 8
+                      },
+                      "effets": {
+                        "raw": [],
+                        "custom": []
+                      }
+                    }
+                  }
+                },
+                "ai5": {
+                  "chair": [
+                    9,
+                    10
+                  ],
+                  "force": 5,
+                  "liste": {
+                    "1": {
+                      "utilisation": 1,
+                      "degats": {
+                        "dice": 10
+                      },
+                      "violence": {
+                        "dice": 12
+                      },
+                      "effets": {
+                        "raw": [],
+                        "custom": []
+                      }
+                    },
+                    "2": {
+                      "utilisation": 2,
+                      "degats": {
+                        "dice": 11
+                      },
+                      "violence": {
+                        "dice": 11
+                      },
+                      "effets": {
+                        "raw": [],
+                        "custom": []
+                      }
+                    }
+                  }
+                }
+              }
+            },
+            "grenades": {
+              "liste": {
+                "antiblindage": {
+                  "degats": {
+                    "dice": 3
+                  },
+                  "violence": {
+                    "dice": 3
+                  },
+                  "effets": {
+                    "raw": [
+                      "destructeur",
+                      "dispersion 6",
+                      "penetrant 6",
+                      "percearmure 20"
+                    ],
+                    "custom": []
+                  }
+                },
+                "explosive": {
+                  "degats": {
+                    "dice": 3
+                  },
+                  "violence": {
+                    "dice": 3
+                  },
+                  "effets": {
+                    "raw": [
+                      "antivehicule",
+                      "choc 1",
+                      "dispersion 3"
+                    ],
+                    "custom": []
+                  }
+                },
+                "flashbang": {
+                  "degats": {
+                    "dice": 0
+                  },
+                  "violence": {
+                    "dice": 0
+                  },
+                  "effets": {
+                    "raw": [
+                      "aucundegatsviolence",
+                      "barrage 2",
+                      "choc 1",
+                      "dispersion 6",
+                      "lumiere 2"
+                    ],
+                    "custom": []
+                  }
+                },
+                "iem": {
+                  "degats": {
+                    "dice": 0
+                  },
+                  "violence": {
+                    "dice": 0
+                  },
+                  "effets": {
+                    "raw": [
+                      "aucundegatsviolence",
+                      "dispersion 6",
+                      "parasitage 2"
+                    ],
+                    "custom": []
+                  }
+                },
+                "shrapnel": {
+                  "degats": {
+                    "dice": 3
+                  },
+                  "violence": {
+                    "dice": 3
+                  },
+                  "effets": {
+                    "raw": [
+                      "dispersion 6",
+                      "meurtrier",
+                      "ultraviolence"
+                    ],
+                    "custom": []
+                  }
+                }
+              },
+              "quantity": {
+                "max": 5,
+                "value": 5
+              }
+            },
+            "nods": {
+              "armure": {
+                "dices": "3D6",
+                "value": 0,
+                "max": 0
+              },
+              "energie": {
+                "dices": "3D6",
+                "value": 0,
+                "max": 0
+              },
+              "soin": {
+                "dices": "3D6",
+                "value": 0,
+                "max": 0
+              }
+            }
+          },
+          "otherMods": {},
+          "immunity": {
+            "manuel": [],
+            "auto": [],
+            "merge": []
+          },
+          "options": {
+            "embuscadeSubis": false,
+            "embuscadePris": false,
+            "bouclier": true,
+            "phase2": false,
+            "notFirstMenu": false,
+            "noSecondMenu": false,
+            "armure": true,
+            "energie": true,
+            "sante": true,
+            "resilience": true,
+            "art": false,
+            "champDeForce": true,
+            "espoir": true,
+            "modules": false,
+            "wolfConfiguration": false,
+            "jetsSpeciaux": false
+          },
+          "bonusSiEmbuscade": {
+            "dice": 0,
+            "fixe": 0
+          },
+          "langues": {
+            "value": 1,
+            "mod": 0,
+            "bonus": {
+              "user": 0,
+              "system": 0
+            }
+          },
+          "origin": "humain",
+          "type": "",
+          "histoire": "",
+          "tactique": "",
+          "pointsFaibles": "",
+          "aspects": {
+            "chair": {
+              "max": 20,
+              "value": 0,
+              "bonus": {},
+              "malus": {},
+              "override": {},
+              "ae": {
+                "mineur": {
+                  "value": 0,
+                  "max": 10
+                },
+                "majeur": {
+                  "value": 0,
+                  "max": 10
+                }
+              }
+            },
+            "bete": {
+              "max": 20,
+              "value": 0,
+              "bonus": {},
+              "malus": {},
+              "override": {},
+              "ae": {
+                "mineur": {
+                  "value": 0,
+                  "max": 10
+                },
+                "majeur": {
+                  "value": 0,
+                  "max": 10
+                }
+              }
+            },
+            "machine": {
+              "max": 20,
+              "value": 0,
+              "bonus": {},
+              "malus": {},
+              "override": {},
+              "ae": {
+                "mineur": {
+                  "value": 0,
+                  "max": 10
+                },
+                "majeur": {
+                  "value": 0,
+                  "max": 10
+                }
+              }
+            },
+            "dame": {
+              "max": 20,
+              "value": 0,
+              "bonus": {},
+              "malus": {},
+              "override": {},
+              "ae": {
+                "mineur": {
+                  "value": 0,
+                  "max": 10
+                },
+                "majeur": {
+                  "value": 0,
+                  "max": 10
+                }
+              }
+            },
+            "masque": {
+              "max": 20,
+              "value": 0,
+              "bonus": {},
+              "malus": {},
+              "override": {},
+              "ae": {
+                "mineur": {
+                  "value": 0,
+                  "max": 10
+                },
+                "majeur": {
+                  "value": 0,
+                  "max": 10
+                }
+              }
+            }
+          },
+          "bouclier": {
+            "base": 0,
+            "value": 0,
+            "valueWOMod": 0,
+            "mod": 0,
+            "malustotal": 0,
+            "iswatchtower": false,
+            "override": {},
+            "bonus": {
+              "user": 0,
+              "system": 0
+            },
+            "malus": {
+              "user": 0,
+              "system": 0
+            }
+          },
+          "phase2": {
+            "armure": 0,
+            "energie": 0,
+            "sante": 0,
+            "aspects": {
+              "chair": {
+                "value": 0,
+                "ae": {
+                  "mineur": 0,
+                  "majeur": 0
+                }
+              },
+              "bete": {
+                "value": 0,
+                "ae": {
+                  "mineur": 0,
+                  "majeur": 0
+                }
+              },
+              "machine": {
+                "value": 0,
+                "ae": {
+                  "mineur": 0,
+                  "majeur": 0
+                }
+              },
+              "dame": {
+                "value": 0,
+                "ae": {
+                  "mineur": 0,
+                  "majeur": 0
+                }
+              },
+              "masque": {
+                "value": 0,
+                "ae": {
+                  "mineur": 0,
+                  "majeur": 0
+                }
+              }
+            }
+          },
+          "phase2Activate": false,
+          "colosse": false,
+          "patron": false,
+          "resilience": {
+            "value": 0,
+            "max": 50
+          },
+          "lion": false,
+          "wear": "tenueCivile",
+          "age": "",
+          "archetype": "",
+          "metaarmure": "",
+          "blason": "",
+          "surnom": "",
+          "section": "",
+          "hautFait": "",
+          "egide": {
+            "base": 0,
+            "value": 0,
+            "valueWOMod": 0,
+            "mod": 0,
+            "malustotal": 0,
+            "iswatchtower": false,
+            "override": {},
+            "bonus": {
+              "user": 0,
+              "system": 0
+            },
+            "malus": {
+              "user": 0,
+              "system": 0
+            }
+          },
+          "configurationActive": "",
+          "wolf": {},
+          "jetsSpeciaux": [],
+          "flux": {
+            "value": 0
+          },
+          "art": {
+            "oeuvres": {}
+          },
+          "equipements": {
+            "armure": {
+              "capacites": {
+                "ascension": {
+                  "id": "0",
+                  "energie": 0
+                },
+                "borealis": {
+                  "allie": 0
+                },
+                "changeling": {
+                  "fauxetres": 0
+                },
+                "companions": {
+                  "type": "",
+                  "energie": 0,
+                  "energieDisponible": []
+                },
+                "forward": 1,
+                "goliath": {
+                  "metre": 0
+                },
+                "morph": {
+                  "nbre": 0
+                },
+                "puppet": {
+                  "cible": 0
+                },
+                "rage": {
+                  "niveau": {}
+                },
+                "totem": {
+                  "nombre": 0
+                },
+                "vision": {
+                  "energie": 0
+                },
+                "warlord": {
+                  "energie": {
+                    "nbre": 1
+                  },
+                  "esquive": {
+                    "nbre": 1
+                  },
+                  "force": {
+                    "nbre": 1
+                  },
+                  "guerre": {
+                    "nbre": 1
+                  }
+                }
+              },
+              "special": {
+                "contrecoups": 0,
+                "flux": 1,
+                "impregnation": 0
+              }
+            }
+          },
+          "espoir": {
+            "mod": 0,
+            "value": 0,
+            "max": 50,
+            "perte": {
+              "saufAgonie": false
+            },
+            "bonus": {
+              "user": 0
+            },
+            "malus": {
+              "user": 0
+            },
+            "recuperation": {
+              "aucun": false,
+              "bonus": 0,
+              "malus": 0
+            },
+            "reduction": 0
+          },
+          "champDeForce": {
+            "value": 0,
+            "base": 0,
+            "mod": 0,
+            "bonus": {
+              "user": 0
+            },
+            "malus": {
+              "user": 0
+            }
+          }
+        },
+        "folder": null,
+        "sort": 40000,
+        "ownership": {
+          "default": 0
+        },
+        "flags": {},
+        "_id": "kdtAtkPnjAAAAAAA",
+        "_stats": {
+          "coreVersion": "14.369",
+          "systemId": "knight",
+          "systemVersion": "3.58.38",
+          "createdTime": null,
+          "modifiedTime": null,
+          "lastModifiedBy": null,
+          "compendiumSource": null,
+          "duplicateSource": null,
+          "exportSource": null
+        },
+        "items": [
+          {
+            "name": "Kdt Arme Standard",
+            "type": "arme",
+            "system": {
+              "degats": {
+                "dice": 3,
+                "fixe": 2,
+                "addchair": true,
+                "variable": {
+                  "has": false,
+                  "min": {
+                    "dice": 0,
+                    "fixe": 0
+                  },
+                  "max": {
+                    "dice": 0,
+                    "fixe": 0
+                  },
+                  "cout": 0
+                }
+              },
+              "violence": {
+                "dice": 2,
+                "fixe": 0,
+                "variable": {
+                  "has": false,
+                  "min": {
+                    "dice": 0,
+                    "fixe": 0
+                  },
+                  "max": {
+                    "dice": 0,
+                    "fixe": 0
+                  },
+                  "cout": 0
+                }
+              },
+              "effets": {
+                "raw": [
+                  "percearmure 40",
+                  "penetrant 6"
+                ],
+                "custom": [],
+                "liste": [],
+                "chargeur": null,
+                "activable": []
+              },
+              "description": "",
+              "addOrder": 0,
+              "gratuit": false,
+              "whoActivate": "",
+              "chassis": "",
+              "equipped": false,
+              "rack": false,
+              "rarete": "standard",
+              "type": "contact",
+              "portee": "contact",
+              "prix": 0,
+              "energie": 0,
+              "listes": {},
+              "options2mains": {
+                "has": false,
+                "actuel": "1main",
+                "1main": {
+                  "degats": {
+                    "dice": 0,
+                    "fixe": 0
+                  },
+                  "violence": {
+                    "dice": 0,
+                    "fixe": 0
+                  }
+                },
+                "2main": {
+                  "has": false,
+                  "actuel": "1main",
+                  "degats": {
+                    "dice": 0,
+                    "fixe": 0
+                  },
+                  "violence": {
+                    "dice": 0,
+                    "fixe": 0
+                  }
+                }
+              },
+              "optionsmunitions": {
+                "has": false,
+                "actuel": "0",
+                "value": 1,
+                "liste": {}
+              },
+              "tourelle": {
+                "has": false,
+                "attaque": {
+                  "dice": 0,
+                  "fixe": 0
+                }
+              },
+              "effets2mains": {
+                "liste": [],
+                "raw": [],
+                "custom": [],
+                "chargeur": null,
+                "activable": []
+              },
+              "distance": {
+                "liste": [],
+                "raw": [],
+                "custom": []
+              },
+              "ornementales": {
+                "liste": [],
+                "raw": [],
+                "custom": []
+              },
+              "structurelles": {
+                "liste": [],
+                "raw": [],
+                "custom": []
+              }
+            },
+            "_id": "kdtWpnStandardAA",
+            "img": "icons/svg/item-bag.svg",
+            "effects": [],
+            "folder": null,
+            "sort": 0,
+            "ownership": {
+              "default": 0
+            },
+            "flags": {},
+            "_stats": {
+              "coreVersion": "14.369",
+              "systemId": "knight",
+              "systemVersion": "3.58.38",
+              "createdTime": null,
+              "modifiedTime": null,
+              "lastModifiedBy": null,
+              "compendiumSource": null,
+              "duplicateSource": null,
+              "exportSource": null
+            }
+          },
+          {
+            "name": "Kdt Arme Trait",
+            "type": "arme",
+            "system": {
+              "degats": {
+                "dice": 3,
+                "fixe": 2,
+                "addchair": true,
+                "variable": {
+                  "has": false,
+                  "min": {
+                    "dice": 0,
+                    "fixe": 0
+                  },
+                  "max": {
+                    "dice": 0,
+                    "fixe": 0
+                  },
+                  "cout": 0
+                }
+              },
+              "violence": {
+                "dice": 2,
+                "fixe": 0,
+                "variable": {
+                  "has": false,
+                  "min": {
+                    "dice": 0,
+                    "fixe": 0
+                  },
+                  "max": {
+                    "dice": 0,
+                    "fixe": 0
+                  },
+                  "cout": 0
+                }
+              },
+              "effets": {
+                "raw": [
+                  "percearmure 40",
+                  "penetrant 6",
+                  "destructeur"
+                ],
+                "custom": [],
+                "liste": [],
+                "chargeur": null,
+                "activable": []
+              },
+              "description": "",
+              "addOrder": 0,
+              "gratuit": false,
+              "whoActivate": "",
+              "chassis": "",
+              "equipped": false,
+              "rack": false,
+              "rarete": "standard",
+              "type": "contact",
+              "portee": "contact",
+              "prix": 0,
+              "energie": 0,
+              "listes": {},
+              "options2mains": {
+                "has": false,
+                "actuel": "1main",
+                "1main": {
+                  "degats": {
+                    "dice": 0,
+                    "fixe": 0
+                  },
+                  "violence": {
+                    "dice": 0,
+                    "fixe": 0
+                  }
+                },
+                "2main": {
+                  "has": false,
+                  "actuel": "1main",
+                  "degats": {
+                    "dice": 0,
+                    "fixe": 0
+                  },
+                  "violence": {
+                    "dice": 0,
+                    "fixe": 0
+                  }
+                }
+              },
+              "optionsmunitions": {
+                "has": false,
+                "actuel": "0",
+                "value": 1,
+                "liste": {}
+              },
+              "tourelle": {
+                "has": false,
+                "attaque": {
+                  "dice": 0,
+                  "fixe": 0
+                }
+              },
+              "effets2mains": {
+                "liste": [],
+                "raw": [],
+                "custom": [],
+                "chargeur": null,
+                "activable": []
+              },
+              "distance": {
+                "liste": [],
+                "raw": [],
+                "custom": []
+              },
+              "ornementales": {
+                "liste": [],
+                "raw": [],
+                "custom": []
+              },
+              "structurelles": {
+                "liste": [],
+                "raw": [],
+                "custom": []
+              }
+            },
+            "_id": "kdtWpnTraitAAAAA",
+            "img": "icons/svg/item-bag.svg",
+            "effects": [],
+            "folder": null,
+            "sort": 0,
+            "ownership": {
+              "default": 0
+            },
+            "flags": {},
+            "_stats": {
+              "coreVersion": "14.369",
+              "systemId": "knight",
+              "systemVersion": "3.58.38",
+              "createdTime": null,
+              "modifiedTime": null,
+              "lastModifiedBy": null,
+              "compendiumSource": null,
+              "duplicateSource": null,
+              "exportSource": null
+            }
+          }
+        ],
+        "effects": [],
+        "prototypeToken": {
+          "name": "atk-pnj",
+          "displayName": 0,
+          "actorLink": false,
+          "width": 1,
+          "height": 1,
+          "depth": 1,
+          "texture": {
+            "src": "icons/svg/mystery-man.svg",
+            "anchorX": 0.5,
+            "anchorY": 0.5,
+            "fit": "contain",
+            "scaleX": 1,
+            "scaleY": 1,
+            "tint": "#ffffff",
+            "alphaThreshold": 0.75
+          },
+          "lockRotation": false,
+          "rotation": 0,
+          "alpha": 1,
+          "disposition": -1,
+          "displayBars": 0,
+          "bar1": {
+            "attribute": "sante"
+          },
+          "bar2": {
+            "attribute": "armure"
+          },
+          "light": {
+            "negative": false,
+            "priority": 0,
+            "alpha": 0.5,
+            "angle": 360,
+            "bright": 0,
+            "color": null,
+            "coloration": 1,
+            "dim": 0,
+            "attenuation": 0.5,
+            "luminosity": 0.5,
+            "saturation": 0,
+            "contrast": 0,
+            "shadows": 0,
+            "animation": {
+              "type": null,
+              "speed": 5,
+              "intensity": 5,
+              "reverse": false
+            },
+            "darkness": {
+              "min": 0,
+              "max": 1
+            }
+          },
+          "sight": {
+            "enabled": false,
+            "range": 0,
+            "angle": 360,
+            "visionMode": "basic",
+            "color": null,
+            "attenuation": 0.1,
+            "brightness": 0,
+            "saturation": 0,
+            "contrast": 0
+          },
+          "detectionModes": {},
+          "occludable": {
+            "radius": 0
+          },
+          "ring": {
+            "enabled": false,
+            "colors": {
+              "ring": null,
+              "background": null
+            },
+            "effects": 1,
+            "subject": {
+              "scale": 1,
+              "texture": null
+            }
+          },
+          "turnMarker": {
+            "mode": 1,
+            "animation": null,
+            "src": null,
+            "disposition": false
+          },
+          "movementAction": null,
+          "flags": {},
+          "randomImg": false,
+          "appendNumber": false,
+          "prependAdjective": false
+        }
+      },
+      "surprise": false,
+      "style": "standard",
+      "dataStyle": {},
+      "dataMod": {
+        "degats": {
+          "dice": 0,
+          "fixe": 0
+        },
+        "violence": {
+          "dice": 0,
+          "fixe": 0
+        }
+      },
+      "maximize": {
+        "degats": false,
+        "violence": false
+      },
+      "list": [
+        "flavor",
+        "addDmgTags",
+        "total",
+        "targets",
+        "attaque",
+        "weapon",
+        "actor",
+        "surprise",
+        "style",
+        "dataStyle",
+        "dataMod",
+        "maximize",
+        "ghost",
+        "ersatzghost",
+        "secondWpn"
+      ]
+    }
+  },
+  "_stats": {
+    "coreVersion": "14.369",
+    "systemId": "knight",
+    "systemVersion": "3.58.38",
+    "createdTime": null,
+    "modifiedTime": null,
+    "lastModifiedBy": null,
+    "compendiumSource": null,
+    "duplicateSource": null,
+    "exportSource": null
+  }
+}

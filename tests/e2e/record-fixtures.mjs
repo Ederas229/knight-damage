@@ -1,44 +1,77 @@
-// E2E fixture recorder (Phase 2 of docs/testing-plan.md).
+// E2E fixture recorder (Phase 2 flow, extended for Phase 3's trait fixture).
 //
-// Starts the framework ONCE in the test world, creates the standard weapon on atk-pnj, performs a
-// real attack from token atk-pnj targeting token vic-knight THROUGH THE KNIGHT SYSTEM'S OWN FLOW
-// (RollKnight.doRoll → attack message → real click on the system's `Dégâts` chat button →
-// rollDamage → damage message), then saves the damage message as a JSON fixture under
-// tests/e2e/fixtures/. The filename pins the knight system version.
+// Boots the real Foundry v14 test world (docs/testing-plan.md Phase-0 seed) and runs TWO scripted
+// real attacks through the knight system's own roll pipeline (RollKnight.doRoll, the same weapon
+// branch the chat cards use), each followed by the system's OWN chat handler for the attack card's
+// `Dégâts` button (hooks.mjs:205 — triggered through a real DOM click, per the plan). The dumped
+// damage message becomes the shared fixture (source of truth for the e2e AND unit suites):
+//   pass 1: standard weapon (label-only traits)      -> attack-pnj-on-knight-standard-knight-X.json
+//   pass 2: trait weapon (percearmure/penetrant + VALUE-BEARING destructeur sub-roll)
+//                                                    -> attack-pnj-on-knight-trait-knight-X.json
 //
-// Run with `npm run record:e2e` AFTER `npm run prepare:e2e && npm run setup:e2e`.
-// Pass KDT_E2E_RAW_DUMP=1 to also dump the unstripped message object under test-data/recordings/
-// (gitignored) for debugging.
+// PASS ORDER IS A HARD CONSTRAINT (third review (b)): pass 1 first, so the standard fixture's
+// embedded attacker snapshot (flags.knight.actor carries the attacker's weapon list) never sees the
+// trait weapon. Pass 2 only ADDS a weapon. Both weapons are created up-front with PINNED _ids so
+// every re-record reproduces the same bytes.
+//
+// Determinism: the dice-override extension queue is pre-seeded with the plan and the run is GATED
+// on every entry being consumed with the planned faces/number/value, plus pip-level pool gates via
+// checkPools (plan-driven: the standard plan has exactly one damage pool; the trait plan adds the
+// 2D6 destructeur sub-roll). A failed gate NEVER touches the committed files.
+//
+// ANTI-DRIFT (before any write): the candidate fixture JSON is byte-compared to the committed file
+// (if present) — a drift is a hard failure; the baseline is never silently rebased.
 
-import { existsSync, mkdirSync, renameSync, rmSync, writeFileSync } from 'node:fs';
-import path from 'node:path';
 import config from './config.mjs';
-import { acquireSpawnMutex } from './support/spawn-lock.mjs';
 import { loadFramework, respawnPreservingSymlinks } from './support/framework.mjs';
-import { listFixtureNames, loadRecordedFixture } from './support/fixture-store.mjs';
+import { acquireSpawnMutex } from './support/spawn-lock.mjs';
+import {
+  PINNED_KNIGHT_VERSION,
+  STANDARD_FIXTURE_NAME,
+  TRAIT_FIXTURE_NAME,
+  loadRecordedFixture,
+  listFixtureNames,
+} from './support/fixture-store.mjs';
 import {
   ATTACKER_ACTOR_ID,
   ATTACKER_TOKEN_NAME,
-  ATTACK_DICE,
   DAMAGE_DICE,
   EXPECTED_TARGET_VALUE,
-  FIXTURES_DIR,
+  EXPECTED_TRAIT_VALUE,
   STANDARD_WEAPON,
+  TRAIT_SUBDICE,
+  TRAIT_WEAPON,
   VICTIM_TOKEN_ID,
   VICTIM_TOKEN_NAME,
   buildFixtureMeta,
+  checkPools,
+  checkTraitSpan,
+  clearDiceQueueInPage,
   createWeaponInPage,
   diceQueueStateInPage,
-  dumpLastDamageMessageInPage,
-  fixtureFileName,
-  moduleButtonsInPage,
+  dumpNewDamageMessageInPage,
+  moduleButtonsOnCardInPage,
   normalizeForWrite,
+  retargetVictimInPage,
   runAttackInPage,
   stripVolatileKeys,
-  targetVictimInPage,
 } from './support/attack-run.mjs';
+import { clickOnMessageCard, listMessageIdsInPage } from './support/chat.mjs';
+import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 /* global process */
+
+const HERE = path.dirname(fileURLToPath(import.meta.url));
+const FIXTURES_DIR = path.join(HERE, 'fixtures');
+const QUEUE_FILE = path.join(HERE, 'last-dice-queue.json');
+const TRAIT_QUEUE_FILE = path.join(HERE, 'last-dice-queue-trait.json');
+
+// Damage-phase dice plans per weapon (the attack pool is always ATTACK 3D6 total 7: two successes,
+// one failure -> no exploit re-roll hijacking the queue, roll.mjs:1008).
+const STANDARD_DAMAGE_PLAN = [DAMAGE_DICE]; // 3D6 total 12 -> per-target value 12 + fixe 2 = 14
+const TRAIT_DAMAGE_PLAN = [TRAIT_SUBDICE, DAMAGE_DICE]; // destructeur 2D6 sub-roll, then 3D6 damage
 
 if (respawnPreservingSymlinks()) {
   // Parent: the symlink-preserving child inherited stdio and carries the run.
@@ -57,8 +90,6 @@ async function main(Framework) {
   try {
     await fw.start();
 
-    // Page console passthrough: knight-system errors during the scripted flow surface here
-    // instead of vanishing (waitFor predicates swallow exceptions — see the stringify rule).
     fw.page.on('console', (msg) => {
       if (msg.type() === 'error' || msg.type() === 'warning') console.log(`[page:${msg.type()}] ${msg.text()}`);
     });
@@ -75,6 +106,8 @@ async function main(Framework) {
     );
     if (versions.lang !== 'fr')
       throw new Error(`chat HTML contract is French but game.i18n.lang=${versions.lang} — check browser locale`);
+    if (versions.knight !== PINNED_KNIGHT_VERSION)
+      throw new Error(`knight system ${versions.knight} != pinned fixture version ${PINNED_KNIGHT_VERSION}`);
 
     // World-fixture precondition check (tokens must be on the ACTIVE scene for the flow).
     const sceneOk = await fw.executeInFoundry(
@@ -98,222 +131,116 @@ async function main(Framework) {
     if (!sceneOk.atk || !sceneOk.vic) throw new Error('fixture tokens missing on the active scene');
     if (sceneOk.atkActor !== ATTACKER_ACTOR_ID) throw new Error(`attacker token not linked to ${ATTACKER_ACTOR_ID}`);
 
-    // 1. The standard weapon, live-created on the attacker (the world seeds no items).
+    // 1. BOTH weapons, live-created up-front with pinned _ids (the world seeds no items). Creating
+    //    the trait weapon before pass 1 is safe: the system puts only the ATTACKED-WITH weapon in
+    //    flags.knight.weapon, and flags.knight.actor embeds the attacker snapshot the standard
+    //    baseline already recorded with this exact weapon pair present? NO — the baseline was
+    //    recorded with only the standard weapon present, so pass 1 must run with ONLY that weapon
+    //    on the attacker. The trait weapon is created AFTER pass 1 (below).
     const weaponInfo = await fw.executeInFoundry(
       createWeaponInPage,
       ATTACKER_ACTOR_ID,
       structuredClone(STANDARD_WEAPON),
     );
+    guardPinnedId(weaponInfo, STANDARD_WEAPON);
     console.log(
-      `[record] weapon item id=${weaponInfo.itemId} pinnedId=${weaponInfo.keptRequestedId} effets.raw=${JSON.stringify(weaponInfo.raw)}`,
-    );
-    // HARD guard (belt after the braces): v14 REJECTS a keepId create whose _id already exists
-    // (test-data persists between records — running record:e2e twice without setup:e2e in
-    // between hits this), and createWeaponInPage now lets that rejection throw. This guard
-    // additionally catches any future path where a non-pinned id sneaks through: a drifted weapon
-    // id would corrupt the byte-stable fixture contract (meta.weaponItemId +
-    // flags.knight.weapon.id + the actor item snapshot would all differ).
-    if (!weaponInfo.keptRequestedId)
-      throw new Error(
-        `weapon _id "${STANDARD_WEAPON._id}" could not be pinned (got "${weaponInfo.itemId}") — the test world likely already holds a weapon from an earlier record:e2e run; re-run \`npm run setup:e2e\` first (fixture byte-stability requires a fresh world copy)`,
-      );
-    if (weaponInfo.itemId !== STANDARD_WEAPON._id)
-      throw new Error(`unexpected weapon id ${weaponInfo.itemId} (expected ${STANDARD_WEAPON._id})`);
-
-    // 2. Deterministic dice: two pools total (attack + damage), both plain d6 via Foundry's Roll.
-    await fw.queueDiceOverride(ATTACK_DICE.faces, ATTACK_DICE.count, ATTACK_DICE.total);
-    await fw.queueDiceOverride(DAMAGE_DICE.faces, DAMAGE_DICE.count, DAMAGE_DICE.total);
-
-    // 3. Target the victim token — the only targeting the system flow reads (roll.mjs:1210).
-    const targeted = await fw.executeInFoundry(targetVictimInPage, VICTIM_TOKEN_ID);
-    if (targeted !== 1) throw new Error(`expected exactly 1 targeted token, got ${targeted}`);
-
-    // 4. Real attack roll (system's own RollKnight.doRoll weapon branch), rolled from the
-    //    attacker TOKEN's actor like a live GM would (see runAttackInPage docs).
-    const attackInfo = await fw.executeInFoundry(runAttackInPage, sceneOk.atk, weaponInfo.itemId, ATTACK_DICE.formula);
-    console.log(
-      `[record] attack message ${attackInfo.attackMessageId}, targets=${JSON.stringify(attackInfo.attackTargets)}`,
+      `[record] weapon id=${weaponInfo.itemId} pinned=${weaponInfo.keptRequestedId} raw=${JSON.stringify(weaponInfo.raw)}`,
     );
 
-    // 5. Real DOM click on the system's own damage button inside that attack message
-    //    (hooks.mjs:205 wires .knight-roll button.degats -> rollDamage).
-    await fw.waitFor(() => {
-      const cards = document.querySelectorAll('.chat-scroll li.chat-message');
-      const last = cards[cards.length - 1];
-      return last?.querySelector('.knight-roll button.degats') ? true : null;
-    }, 15000);
-    await fw.clickInLastChatMessage('button.degats');
-
-    // 6. Wait for the damage message with per-target value pinned, then dump it.
-    const dumped = await fw.waitFor(dumpLastDamageMessageInPage, 15000, VICTIM_TOKEN_ID);
-    const target = dumped.object.flags.knight.targets.find((t) => t.id === VICTIM_TOKEN_ID);
-    const diceOverrideApplied = target.value === EXPECTED_TARGET_VALUE;
-    console.log(
-      `[record] damage message ${dumped.damageMessageId}: targets[0].value=${target.value} (expected ${EXPECTED_TARGET_VALUE}, diceOverrideApplied=${diceOverrideApplied})`,
-    );
-
-    // 7. Live proof that the module acts on this exact message (its buttons got injected).
-    //    waitFor-style: moduleButtonsInPage returns null until the renderChatMessageHTML hook has
-    //    added .damageButton buttons to the last card (sampling the DOM without a wait would be a
-    //    false "buttons missing" failure under timing skew).
-    const liveButtons = await fw.waitFor(moduleButtonsInPage, 15000);
-    console.log(`[record] module buttons on the live damage message: ${JSON.stringify(liveButtons)}`);
-
-    // 7b. Proof the dice-override extension was installed and consumed BOTH planned pools.
-    const queueState = await fw.executeInFoundry(diceQueueStateInPage);
-    console.log(`[record] dice-override queue: ${JSON.stringify(queueState)}`);
-
-    // 8. Strip volatiles, attach metadata, gate, THEN write. The integrity gate runs BEFORE the
-    //    write on purpose: the fixture file is the shared source of truth for BOTH suites (the
-    //    unit suite imports it) — a failed/drifted recording must never overwrite the known-good
-    //    baseline; exit code alone would leave a polluted file that the unit contract test then
-    //    adapts to (its value pin softens when diceOverrideApplied is false).
-    // Normalize ONCE before every gate and the drift comparison (review 3: comparing a
-    // pre-normalize object against a post-normalize baseline only works while no Date/Set/
-    // undefined-valued key appears inside the compared subtrees — normalize-first removes
-    // that class of false positive entirely; normalizeForWrite is an idempotent JSON round-trip).
-    const clean = normalizeForWrite(stripVolatileKeys(dumped.object));
-    const fixture = normalizeForWrite({
-      ...buildFixtureMeta({
-        knightVersion: versions.knight,
-        coreVersion: versions.core,
-        worldId: config.world,
-        weaponItemId: weaponInfo.itemId,
-        diceOverrideApplied,
-      }),
-      ...clean,
+    // 2. Pass 1 (standard): attack dice queue + target + real roll + pinned real Dégâts click + dump.
+    const pass1 = await runAttackPass(fw, {
+      label: 'standard',
+      atkTokenId: sceneOk.atk,
+      weaponItemId: weaponInfo.itemId,
+      attackDice: { faces: 6, count: 3, total: 7 },
+      damagePlan: STANDARD_DAMAGE_PLAN,
+      formula: '3D6',
     });
 
-    const fileName = fixtureFileName(versions.knight);
-    const outPath = path.join(FIXTURES_DIR, fileName);
+    // 3. Build + gate the standard fixture, compare to the committed baseline BEFORE writing.
+    const standardFixture = buildFixture(pass1, {
+      versions,
+      weaponItemSeed: STANDARD_WEAPON,
+      weaponItemId: weaponInfo.itemId,
+      dicePlan: {
+        attack: { faces: 6, count: 3, total: 7, formula: '3D6' },
+        damage: { faces: DAMAGE_DICE.faces, count: DAMAGE_DICE.count, total: DAMAGE_DICE.total },
+        expectedTargetValue: EXPECTED_TARGET_VALUE,
+      },
+      extraMeta: {},
+    });
+    const standardJson = `${JSON.stringify(standardFixture, null, 2)}\n`;
+    compareAgainstBaseline(STANDARD_FIXTURE_NAME, standardJson); // hard fail on drift, never writes
+    publishFixture(STANDARD_FIXTURE_NAME, standardJson);
+    writeFileSync(QUEUE_FILE, JSON.stringify(pass1.queueState, null, 2), 'utf8');
+    console.log(`[record] pass 1 OK: ${STANDARD_FIXTURE_NAME}`);
 
-    const failures = [];
-    if (!diceOverrideApplied) failures.push(`target value ${target.value} != expected ${EXPECTED_TARGET_VALUE}`);
-    if (!/Dégâts<\/div>/.test(clean.content)) failures.push('content lacks the French Dégâts</div> fragment');
-    if (JSON.stringify(clean.flags.knight.weapon.effets.raw) !== JSON.stringify(STANDARD_WEAPON.system.effets.raw))
-      failures.push(`weapon.effets.raw drifted: ${JSON.stringify(clean.flags.knight.weapon.effets.raw)}`);
-    if (!liveButtons || liveButtons.length < 5)
-      failures.push(`module buttons missing on the live message: ${liveButtons}`);
+    // 4. Pass 2 (trait weapon): created only NOW, so the standard fixture's embedded attacker
+    //    snapshot (flags.knight.actor weapon list) stays byte-identical across re-records.
+    const traitInfo = await fw.executeInFoundry(createWeaponInPage, ATTACKER_ACTOR_ID, structuredClone(TRAIT_WEAPON));
+    guardPinnedId(traitInfo, TRAIT_WEAPON);
+    console.log(
+      `[record] trait weapon id=${traitInfo.itemId} pinned=${traitInfo.keptRequestedId} raw=${JSON.stringify(traitInfo.raw)}`,
+    );
 
-    // Queue-consumption gate: every planned pool must have been CONSUMED by a roll (proves the
-    // extension patch was installed and no pool went random).
-    const plannedQueue = [
-      { faces: ATTACK_DICE.faces, number: ATTACK_DICE.count, value: ATTACK_DICE.total },
-      { faces: DAMAGE_DICE.faces, number: DAMAGE_DICE.count, value: DAMAGE_DICE.total },
-    ];
-    if (
-      queueState.length !== plannedQueue.length ||
-      queueState.some(
-        (e, i) =>
-          !e.consumed ||
-          e.faces !== plannedQueue[i].faces ||
-          e.number !== plannedQueue[i].number ||
-          e.value !== plannedQueue[i].value,
-      )
-    )
-      failures.push(`dice-override queue not fully consumed as planned: ${JSON.stringify(queueState)}`);
+    const pass2 = await runAttackPass(fw, {
+      label: 'trait',
+      atkTokenId: sceneOk.atk,
+      weaponItemId: traitInfo.itemId,
+      attackDice: { faces: 6, count: 3, total: 7 },
+      damagePlan: TRAIT_DAMAGE_PLAN,
+      formula: '3D6',
+    });
 
-    // PIP-level determinism gate (review 3): target value 14 alone is NOT determinism. The knight
-    // system can roll an EXTRA exploit pool with the SAME 3D6 formula (roll.mjs:1008-1019, gated
-    // by ~12.5% all-even attack), and the extension matches pools by faces+number first-unconsumed
-    // (content.js:22-27) — so the extra pool would steal the damage queue entry and the real
-    // damage pool would roll genuinely random dice. ~4.6% of random 3d6 sums equal 12, silently
-    // baking random pips into the baseline the 155-test unit suite consumes. Pin the POOL COUNT
-    // (an exploit pool => 2 entries in rolls[]/attaque[]), the die shape, and the extension's exact
-    // base/remainder pips (content.js:45-51: last active die carries the remainder).
-    const planPips = (plan) => {
-      const base = Math.floor(plan.total / plan.count);
-      return Array.from(
-        { length: plan.count },
-        (_, i) => base + (i === plan.count - 1 ? plan.total - base * plan.count : 0),
-      );
-    };
-    // v14 stores ChatMessage.rolls as serialized JSON STRINGS but flags.knight.attaque as live
-    // Roll OBJECTS inside the flag — accept both shapes (JSON.parse only on strings).
-    const asRoll = (e) => (typeof e === 'string' ? JSON.parse(e) : e);
-    const checkPool = (label, entries, plan) => {
-      let pools;
-      try {
-        pools = entries.map(asRoll);
-      } catch (err) {
-        failures.push(`${label}: roll entries unparseable: ${err.message}`);
-        return;
-      }
-      if (pools.length !== 1) {
-        failures.push(
-          `${label}: expected exactly 1 serialized roll pool, got ${pools.length} (an extra pool means an exploit re-roll hijacked the dice queue)`,
-        );
-        return;
-      }
-      const roll = pools[0];
-      const dice = (roll.terms ?? []).filter((t) => t.class === 'Die');
-      if (dice.length !== 1 || dice[0].faces !== plan.faces || dice[0].number !== plan.count) {
-        failures.push(
-          `${label}: die shape ${JSON.stringify(dice.map((d) => [d.faces, d.number]))} != plan ${plan.faces}d${plan.count}`,
-        );
-      } else {
-        const pips = (dice[0].results ?? []).filter((r) => r.active === true).map((r) => r.result);
-        if (JSON.stringify(pips) !== JSON.stringify(planPips(plan)))
-          failures.push(`${label}: pips ${JSON.stringify(pips)} != pinned plan pips ${JSON.stringify(planPips(plan))}`);
-      }
-      if (roll.total !== plan.total) failures.push(`${label}: roll total ${roll.total} != plan total ${plan.total}`);
-    };
-    checkPool('damage rolls', clean.rolls ?? [], DAMAGE_DICE);
-    checkPool('flags.knight.attaque', clean.flags?.knight?.attaque ?? [], ATTACK_DICE);
+    const traitFixture = buildFixture(pass2, {
+      versions,
+      weaponItemSeed: TRAIT_WEAPON,
+      weaponItemId: traitInfo.itemId,
+      dicePlan: {
+        attack: { faces: 6, count: 3, total: 7, formula: '3D6' },
+        damage: { faces: DAMAGE_DICE.faces, count: DAMAGE_DICE.count, total: DAMAGE_DICE.total },
+        traitSubRoll: { faces: TRAIT_SUBDICE.faces, count: TRAIT_SUBDICE.count, total: TRAIT_SUBDICE.total },
+        expectedTargetValue: EXPECTED_TARGET_VALUE,
+        expectedTraitValue: EXPECTED_TRAIT_VALUE,
+      },
+      extraMeta: {
+        weaponTraits: TRAIT_WEAPON.system.effets.raw,
+        expectedTraitValue: EXPECTED_TRAIT_VALUE,
+      },
+    });
+    const traitJson = `${JSON.stringify(traitFixture, null, 2)}\n`;
+    compareAgainstBaseline(TRAIT_FIXTURE_NAME, traitJson);
+    publishFixture(TRAIT_FIXTURE_NAME, traitJson);
+    writeFileSync(TRAIT_QUEUE_FILE, JSON.stringify(pass2.queueState, null, 2), 'utf8');
+    console.log(`[record] pass 2 OK: ${TRAIT_FIXTURE_NAME}`);
 
-    // Drift guard (review 2): the fresh-world assumption only protects against WEAPON residue —
-    // a Phase-3 damage case that does not revert mutates the victim actor (embedded snapshot
-    // flags.knight.actor + targets[].aspects), and the weapon-pin guard cannot see that. If a
-    // baseline fixture already exists, its victim/attacker subtrees must match or nothing writes.
-    if (existsSync(outPath)) {
-      const { message: baseline } = loadRecordedFixture(fileName);
-      const driftKey = (msg) =>
-        JSON.stringify({
-          victimAspects: msg.flags.knight.targets.find((t) => t.id === VICTIM_TOKEN_ID)?.aspects ?? null,
-          attackerSnapshot: msg.flags.knight.actor,
-        });
-      if (driftKey(clean) !== driftKey(baseline))
-        failures.push(
-          'world state drifted from the committed baseline (victim aspects / attacker snapshot changed — ' +
-            'a previous run mutated the actors); run `npm run setup:e2e` first',
-        );
+    // Version-bump hygiene: prune stale fixtures of OTHER versions (never touched fixtures of THIS
+    // version that are not one of our two families).
+    const current = new Set([STANDARD_FIXTURE_NAME, TRAIT_FIXTURE_NAME]);
+    for (const stale of listFixtureNames().filter(
+      (n) => !current.has(n) && /^attack-pnj-on-knight-(standard|trait)-knight-/.test(n),
+    )) {
+      rmSync(path.join(FIXTURES_DIR, stale));
+      console.log(`[record] removed stale fixture ${stale} (older knight version)`);
     }
 
-    if (process.env.KDT_E2E_RAW_DUMP) {
-      // Raw dumps are gitignored test-data artifacts: useful even for a FAILED recording.
-      const rawDir = path.join(config.testDataPath, 'recordings');
-      mkdirSync(rawDir, { recursive: true });
-      writeFileSync(path.join(rawDir, `raw-${fileName}`), `${JSON.stringify(dumped.object, null, 2)}\n`, 'utf8');
-      console.log(`[record] raw (unstripped) dump in ${rawDir}`);
-    }
+    // Self-cleanup: the recorder's pinned-weapon creations must not survive into the next consumer
+    // (a damage run right after record would collide with the pinned _ids; guardPinnedId hard-fails
+    // on leftovers BY DESIGN for records, but the published world should stay clean for others).
+    const leftover = await fw.executeInFoundry(
+      (actorId, pinnedIds) => {
+        const actor = game.actors.get(actorId);
+        const present = actor.items.filter((i) => pinnedIds.includes(i.id)).map((i) => i.id);
+        if (present.length === 0) return 0;
+        return actor.deleteEmbeddedDocuments('Item', present).then(() => present.length);
+      },
+      ATTACKER_ACTOR_ID,
+      [STANDARD_WEAPON._id, TRAIT_WEAPON._id],
+    );
+    console.log(`[record] removed its ${leftover} pinned weapon(s) from the attacker (published world stays clean)`);
 
-    if (failures.length) {
-      await fw.screenshot('record-failure.png').catch(() => {});
-      console.log(`\nE2E RECORD: FAIL — baseline fixture NOT touched (${failures.join('; ')})`);
-      process.exitCode = 1;
-    } else {
-      // ATOMIC publish: write beside + rename over. The unit suite reads this file at import
-      // time (fixture-store), and the mutex only guards e2e scripts — a concurrent `npm test` /
-      // pre-commit vitest must never observe a half-written JSON.
-      mkdirSync(FIXTURES_DIR, { recursive: true });
-      const tmpPath = `${outPath}.tmp`;
-      rmSync(tmpPath, { force: true }); // clear a leftover from a crashed earlier write
-      writeFileSync(tmpPath, `${JSON.stringify(fixture, null, 2)}\n`, 'utf8');
-      renameSync(tmpPath, outPath);
-      console.log(`[record] wrote ${path.relative(process.cwd(), outPath)}`);
-
-      // Version-bump hygiene (review 3): bumping PINNED_KNIGHT_VERSION renames the standard
-      // fixture; prune the old-version ones so the shared baseline is always exactly one file.
-      for (const stale of listFixtureNames().filter(
-        (n) => n !== fileName && n.startsWith('attack-pnj-on-knight-standard-knight-'),
-      )) {
-        rmSync(path.join(FIXTURES_DIR, stale));
-        console.log(`[record] removed stale fixture ${stale} (older knight version)`);
-      }
-
-      console.log(`\nE2E RECORD: PASS (${fileName})`);
-      process.exitCode = 0;
-    }
+    console.log('\nE2E RECORD: PASS (both fixtures gated + published)');
+    process.exitCode = 0;
   } catch (err) {
     await fw.screenshot('record-failure.png').catch(() => {});
     throw err;
@@ -321,4 +248,221 @@ async function main(Framework) {
     await fw.stop();
     console.log('Foundry server + browser stopped.');
   }
+}
+
+function guardPinnedId(info, seed) {
+  if (!info.keptRequestedId || info.itemId !== seed._id)
+    throw new Error(
+      `weapon _id "${seed._id}" could not be pinned (got "${info.itemId}") — the test world likely already ` +
+        'holds a weapon from an earlier record:e2e run; re-run `npm run setup:e2e` first (fixture byte-stability ' +
+        'requires a fresh world copy)',
+    );
+}
+
+/**
+ * One attack pass: seed the dice queue, target the victim (re-pinned every pass), run the system's
+ * own doRoll weapon branch, click the PINNED attack card's Dégâts button (ids snapshotted BEFORE the
+ * click — the damage message is born from the click and must be the only new one), dump THE damage
+ * message by message-id pinning, and gate the consumed dice queue.
+ */
+async function runAttackPass(fw, { label, atkTokenId, weaponItemId, attackDice, damagePlan, formula }) {
+  await fw.executeInFoundry(clearDiceQueueInPage); // the extension queue is a page GLOBAL: isolate passes
+  await fw.queueDiceOverride(attackDice.faces, attackDice.count, attackDice.total);
+  for (const plan of damagePlan) await fw.queueDiceOverride(plan.faces, plan.count, plan.total);
+
+  const targeted = await fw.executeInFoundry(retargetVictimInPage, VICTIM_TOKEN_ID);
+  if (targeted !== 1) throw new Error(`[${label}] expected exactly 1 targeted token, got ${targeted}`);
+
+  const attackInfo = await fw.executeInFoundry(runAttackInPage, atkTokenId, weaponItemId, formula);
+  console.log(
+    `[${label}] attack message ${attackInfo.attackMessageId}, targets=${JSON.stringify(attackInfo.attackTargets)}`,
+  );
+  const hit = attackInfo.attackTargets.find((t) => String(t.id) === String(VICTIM_TOKEN_ID));
+  if (!hit || hit.hit !== true)
+    throw new Error(`[${label}] victim token was not hit: ${JSON.stringify(attackInfo.attackTargets)}`);
+
+  // Real DOM click, PINNED to the attack card (the framework clickInLastChatMessage pattern, but
+  // pinned: with two passes the "last card" is only correct as long as nothing else posted — the
+  // pinned variant removes that assumption entirely).
+  await fw.waitFor(
+    (msgId) => {
+      const card = document.querySelector(`li.chat-message[data-message-id="${msgId}"]`);
+      return card?.querySelector('.knight-roll button.degats') ? true : null;
+    },
+    15000,
+    attackInfo.attackMessageId,
+  );
+  const preIds = await fw.executeInFoundry(listMessageIdsInPage);
+  await fw.executeInFoundry(clickOnMessageCard, attackInfo.attackMessageId, 'button.degats');
+
+  const dumped = await fw.waitFor(dumpNewDamageMessageInPage, 15000, preIds, VICTIM_TOKEN_ID);
+  if (dumped.error) throw new Error(`[${label}] ${dumped.error}`);
+  const target = dumped.object.flags.knight.targets.find((t) => t.id === VICTIM_TOKEN_ID);
+  console.log(
+    `[${label}] damage message ${dumped.damageMessageId}: value=${target.value} (expected ${EXPECTED_TARGET_VALUE})`,
+  );
+
+  const liveButtons = await fw.waitFor(moduleButtonsOnCardInPage, 15000, dumped.damageMessageId);
+  console.log(`[${label}] module buttons on the pinned damage card: ${JSON.stringify(liveButtons)}`);
+
+  const queueState = await fw.executeInFoundry(diceQueueStateInPage);
+  const plannedQueue = [attackDice, ...damagePlan].map((p) => ({ faces: p.faces, number: p.count, value: p.total }));
+  if (
+    queueState.length !== plannedQueue.length ||
+    queueState.some(
+      (e, i) =>
+        !e.consumed ||
+        e.faces !== plannedQueue[i].faces ||
+        e.number !== plannedQueue[i].number ||
+        e.value !== plannedQueue[i].value,
+    )
+  ) {
+    throw new Error(
+      `[${label}] dice-override queue not fully consumed as planned: got ${JSON.stringify(queueState)}, planned ${JSON.stringify(plannedQueue)}`,
+    );
+  }
+  return { ...dumped, target, liveButtons, queueState };
+}
+
+/** Assemble one fixture object (same shape as the committed baseline: fixtureMeta header + stripped message). */
+function buildFixture(pass, { versions, weaponItemSeed, weaponItemId, dicePlan, extraMeta }) {
+  const clean = normalizeForWrite(stripVolatileKeys(pass.object));
+  const failures = [];
+
+  if (pass.target.value !== EXPECTED_TARGET_VALUE)
+    failures.push(`target value ${pass.target.value} != expected ${EXPECTED_TARGET_VALUE}`);
+  if (!/Dégâts<\/div>/.test(clean.content)) failures.push('content lacks the French Dégâts</div> fragment');
+  if (JSON.stringify(clean.flags.knight.weapon.effets.raw) !== JSON.stringify(weaponItemSeed.system.effets.raw))
+    failures.push(`weapon.effets.raw drifted: ${JSON.stringify(clean.flags.knight.weapon.effets.raw)}`);
+  if (!pass.liveButtons || pass.liveButtons.length < 5)
+    failures.push(`module buttons missing on the pinned damage card: ${pass.liveButtons}`);
+
+  // Plan-driven pool gates (third review (b)): the damage message serializes the damage-phase pools
+  // (standard: exactly 1; trait: 2 including the destructeur 2D6 sub-roll), and the attack pool in
+  // flags.knight.attaque. Order-independent set matching (the sub-roll precedes the main roll).
+  failures.push(
+    ...checkPools('damage rolls', clean.rolls ?? [], [
+      DAMAGE_DICE,
+      ...(weaponItemSeed === TRAIT_WEAPON ? [TRAIT_SUBDICE] : []),
+    ]),
+  );
+  failures.push(
+    ...checkPools('flags.knight.attaque', clean.flags?.knight?.attaque ?? [], [{ faces: 6, count: 3, total: 7 }]),
+  );
+
+  // Raw round-trip of the weapon's traits, and for the trait pass the VALUE-BEARING span witness:
+  // the module's extractTraitValue regex shape seen live on the SYSTEM's own rendered HTML.
+  if (weaponItemSeed === TRAIT_WEAPON) {
+    failures.push(...checkTraitSpan(clean.content, 'Destructeur', EXPECTED_TRAIT_VALUE));
+    if (clean.flags.knight.weapon.effets.raw.includes('destructeur') === false)
+      failures.push('trait fixture: destructeur keyword missing from the raw round-trip (bool source for the module)');
+  }
+
+  // Drift guard: if the committed fixture exists, victim aspects + attacker snapshot subtrees must
+  // match (a previous damage case that did not revert would show up HERE, before anything writes).
+  const baselinePath = path.join(
+    FIXTURES_DIR,
+    weaponItemSeed === TRAIT_WEAPON ? TRAIT_FIXTURE_NAME : STANDARD_FIXTURE_NAME,
+  );
+  if (existsSync(baselinePath)) {
+    const { message: baseline } = loadRecordedFixture(path.basename(baselinePath));
+    const driftKey = (msg) => ({
+      victimAspects: msg.flags.knight.targets.find((t) => t.id === VICTIM_TOKEN_ID)?.aspects ?? null,
+      attackerSnapshot: msg.flags.knight.actor,
+    });
+    if (JSON.stringify(driftKey(clean)) !== JSON.stringify(driftKey(baseline)))
+      failures.push(
+        'world state drifted from the committed baseline (victim aspects / attacker snapshot changed — ' +
+          'a previous run mutated the actors); run `npm run setup:e2e` first. Diff: ' +
+          describeDrift(driftKey(baseline), driftKey(clean)),
+      );
+  }
+
+  if (process.env.KDT_E2E_RAW_DUMP) {
+    const rawDir = path.join(config.testDataPath, 'recordings');
+    mkdirSync(rawDir, { recursive: true });
+    writeFileSync(
+      path.join(rawDir, `raw-${weaponItemSeed._id}.json`),
+      `${JSON.stringify(pass.object, null, 2)}\n`,
+      'utf8',
+    );
+    console.log(`[record] raw (unstripped) dump in ${rawDir}`);
+  }
+
+  if (failures.length) throw new Error(`fixture gates failed (${weaponItemSeed._id}):\n  ${failures.join('\n  ')}`);
+
+  const meta = buildFixtureMeta({
+    knightVersion: versions.knight,
+    coreVersion: versions.core,
+    worldId: config.world,
+    weaponItemSeed,
+    weaponItemId,
+    diceOverrideApplied: true,
+    dicePlan,
+  });
+  // extraMeta (trait pass only) lives INSIDE fixtureMeta: loadRecordedFixture splits
+  // {fixtureMeta, ...message} and ChatMessage.create would reject unknown top-level fields.
+  meta.fixtureMeta = { ...meta.fixtureMeta, ...extraMeta };
+  return normalizeForWrite({ ...meta, ...clean });
+}
+
+/**
+ * Compact recursive diff of the two driftKey subtrees (baseline vs got) for the drift-gate message:
+ * first few differing paths (leaf scalars + array length/item-id mismatches included).
+ */
+function describeDrift(baseline, got, pathStr = '', out = []) {
+  if (out.length >= 8) return out.join('; ');
+  if (baseline === got) return out.length ? out.join('; ') : 'no scalar diff (key order?)';
+  if (Array.isArray(baseline) && Array.isArray(got)) {
+    if (baseline.length !== got.length) out.push(`${pathStr}.length ${baseline.length}->${got.length}`);
+    for (let i = 0; i < Math.min(baseline.length, got.length); i++)
+      describeDrift(baseline[i], got[i], `${pathStr}[${i}]`, out);
+    return out.length ? out.join('; ') : `${pathStr} arrays differ`;
+  }
+  if (baseline && got && typeof baseline === 'object' && typeof got === 'object') {
+    for (const k of new Set([...Object.keys(baseline), ...Object.keys(got)]))
+      describeDrift(baseline[k], got[k], pathStr ? `${pathStr}.${k}` : k, out);
+    return out.length ? out.join('; ') : `${pathStr} objects differ`;
+  }
+  out.push(`${pathStr} ${JSON.stringify(baseline ?? null)}->${JSON.stringify(got ?? null)}`);
+  return out.length ? out.join('; ') : 'values differ';
+}
+
+/** Byte-level anti-drift gate BEFORE any write: a committed baseline must be reproduced exactly. */
+function compareAgainstBaseline(fileName, candidateJson) {
+  const baselinePath = path.join(FIXTURES_DIR, fileName);
+  if (!existsSync(baselinePath)) {
+    console.log(`[record] no committed ${fileName} yet: writing a fresh fixture`);
+    return;
+  }
+  const baseline = readFileSync(baselinePath, 'utf8');
+  if (baseline === candidateJson) {
+    console.log(`[record] ${fileName}: byte-identical to the committed baseline`);
+    return;
+  }
+  let firstDiff = candidateJson.length;
+  for (let i = 0; i < Math.min(baseline.length, candidateJson.length); i++) {
+    if (baseline[i] !== candidateJson[i]) {
+      firstDiff = i;
+      break;
+    }
+  }
+  throw new Error(
+    `DÉRIVE DU FIXTURE ${fileName} (baseline ${baseline.length} octets, obtenu ${candidateJson.length}, première différence à ${firstDiff}):\n` +
+      `      baseline: …${baseline.slice(Math.max(0, firstDiff - 120), firstDiff + 120)}…\n` +
+      `      obtenu  : …${candidateJson.slice(Math.max(0, firstDiff - 120), firstDiff + 120)}…\n` +
+      '      Ne jamais rebaseur le baseline en silence: comprendre la dérive (seed de monde, plan de dés,\n' +
+      '      ordre des passes, state résiduel) AVANT toute réécriture volontaire.',
+  );
+}
+
+/** ATOMIC publish: write beside + rename over (the unit suite reads fixtures at import time). */
+function publishFixture(fileName, json) {
+  mkdirSync(FIXTURES_DIR, { recursive: true });
+  const outPath = path.join(FIXTURES_DIR, fileName);
+  const tmpPath = `${outPath}.tmp`;
+  rmSync(tmpPath, { force: true });
+  writeFileSync(tmpPath, json, 'utf8');
+  renameSync(tmpPath, outPath);
+  console.log(`[record] wrote ${path.relative(process.cwd(), outPath)}`);
 }

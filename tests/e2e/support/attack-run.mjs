@@ -47,6 +47,30 @@ export const STANDARD_WEAPON = Object.freeze({
   }),
 });
 
+// ── The trait-bearing weapon: the (b) requirement of the plan's third review ──
+// The standard weapon's percearmure/penetrant render label-only spans (roll.html:203-205:
+// no `value` → `<span class="label merge">`), so extractTraitValue's
+// `<span class="label">X</span><span class="value">+N` contract has NO live witness in the
+// standard fixture. `destructeur` is value-bearing: the system rolls an EXTRA 2D6 sub-roll
+// (roll.mjs:2838-2855) and renders `<span class="label">Destructeur</span>` +
+// `<span class="value">+total</span>` (roll.html:198-208, label from lang/fr.json
+// KNIGHT.EFFETS.DESTRUCTEUR.Label = "Destructeur" — the exact unaccented label the module's
+// const.js pins). Raw keyword stays bare (`'destructeur'`, no number): the value comes from
+// the sub-roll, matching how the module reads it (raw keyword for the BOOL, span for the N).
+export const TRAIT_WEAPON = Object.freeze({
+  _id: 'kdtWpnTraitAAAAA', // 16-char alphanumeric, pinned for byte-stable re-recordings
+  name: 'Kdt Arme Trait',
+  type: 'arme',
+  system: Object.freeze({
+    degats: Object.freeze({ dice: 3, fixe: 2 }), // same damage dice as the standard weapon
+    violence: Object.freeze({ dice: 2, fixe: 0 }),
+    effets: Object.freeze({
+      raw: Object.freeze(['percearmure 40', 'penetrant 6', 'destructeur']),
+      custom: Object.freeze([]),
+    }),
+  }),
+});
+
 // ── Deterministic dice plan (FIFO per die-type/count in the dice-override extension) ──
 // Attack pool  3D6 → total 7 → dice [2,2,3] → 2 successes (knight counts EVEN faces,
 //              roll.mjs:949-951), 1 failure so no exploit re-roll (roll.mjs:1008) and no epicfail.
@@ -55,8 +79,28 @@ export const ATTACK_DICE = Object.freeze({ faces: 6, count: 3, total: 7, formula
 export const DAMAGE_DICE = Object.freeze({ faces: 6, count: 3, total: 12 });
 export const EXPECTED_TARGET_VALUE = DAMAGE_DICE.total + STANDARD_WEAPON.system.degats.fixe; // 14
 
+// TRAIT sub-roll: destructeur's extra pool is `2D6` (subdice constant 2 at roll.mjs:2841 via
+// doSimpleRoll → new Roll(formula), so it is dice-override-pinnable like everything else).
+// The extension matches pools by (faces, number) first-unconsumed, so the plan needs exactly
+// one queue entry per (faces, count) PAIR that the run rolls — for the trait weapon that is
+// attack 3D6, damage 3D6 and destructeur 2D6 (the 2D6 pool does not collide with the 3D6
+// entries: different number).
+export const TRAIT_SUBDICE = Object.freeze({ faces: 6, count: 2, total: 6 }); // pips [3,3]
+export const EXPECTED_TRAIT_VALUE = TRAIT_SUBDICE.total; // span renders +6, module extracts 6
+
+// PLAN-DRIVEN pool expectations (third review (b): the "exactly one pool per phase" gate is
+// the STANDARD plan; the trait plan adds the destructeur sub-roll to the damage message).
+export const STANDARD_ATTACK_PLANS = Object.freeze([ATTACK_DICE]);
+export const STANDARD_DAMAGE_PLANS = Object.freeze([DAMAGE_DICE]);
+export const TRAIT_ATTACK_PLANS = Object.freeze([ATTACK_DICE]);
+export const TRAIT_DAMAGE_PLANS = Object.freeze([DAMAGE_DICE, TRAIT_SUBDICE]);
+
 export function fixtureFileName(knightVersion) {
   return `attack-pnj-on-knight-standard-knight-${knightVersion}.json`;
+}
+
+export function traitFixtureFileName(knightVersion) {
+  return `attack-pnj-on-knight-trait-knight-${knightVersion}.json`;
 }
 
 // ── Page-context functions (framework STRINGIFY RULE: no closures over test vars; values come
@@ -153,14 +197,23 @@ export const runAttackInPage = async (attackerTokenId, weaponItemId, diceFormula
   };
 };
 
-/** Waits for (in page terms) the damage message and returns its full source object. */
-export const dumpLastDamageMessageInPage = (mustHaveValueFor) => {
-  const message = game.messages.contents.at(-1);
-  const flags = message?.flags?.knight;
-  const target = flags?.targets?.find((t) => t.id === mustHaveValueFor);
-  if (!target || target.isValue !== true || typeof target.value !== 'number') {
-    return null; // waitFor retries
-  }
+/** Waits for (in page terms) the damage message and returns its full source object.
+ *  MESSAGE-ID-PINNED discovery (third review (a), applied to the recorder too): the damage
+ *  message is the ONE message created after `excludeIds` was sampled that carries
+ *  flags.knight.targets[tokenId].isValue — "last message" sampling cannot distinguish the
+ *  second recording pass from the first, and multiple candidates are surfaced as an error
+ *  object instead of silently dumping the wrong one. */
+export const dumpNewDamageMessageInPage = (excludeIds, mustHaveValueFor) => {
+  const fresh = game.messages.contents.filter((m) => !excludeIds.includes(m.id));
+  const ready = fresh.filter((m) =>
+    m.flags?.knight?.targets?.some(
+      (t) => t.id === mustHaveValueFor && t.isValue === true && typeof t.value === 'number',
+    ),
+  );
+  if (ready.length === 0) return null; // waitFor retries
+  if (ready.length > 1)
+    return { error: `${ready.length} new damage messages with a pinned target value: ${ready.map((m) => m.id)}` };
+  const message = ready[0];
   return {
     damageMessageId: message.id,
     messageCount: game.messages.size,
@@ -168,14 +221,27 @@ export const dumpLastDamageMessageInPage = (mustHaveValueFor) => {
   };
 };
 
+/** Clears every current target then targets exactly the victim token (game.user.targets is the
+ *  only targeting the system flow reads, roll.mjs:1210; the FIRST attack can leave the target
+ *  set dirty, so the second recording pass must re-pin it). */
+export const retargetVictimInPage = (victimTokenId) => {
+  for (const token of Array.from(game.user.targets)) token.setTarget(false);
+  const token = canvas.tokens.get(victimTokenId);
+  if (!token) throw new Error(`victim token ${victimTokenId} not on the active scene`);
+  token.setTarget(true);
+  return game.user.targets.size;
+};
+
 /**
- * Reads back whether the MODULE injected its damage buttons on the live damage message
+ * Reads back whether the MODULE injected its damage buttons on a PINNED damage-message card
  * (renderChatMessageHTML → .damageButton in knight-damage.js:261-287) — the recording-time
- * proof that what we just recorded is a message the module acts on.
+ * proof that what we just recorded is a message the module acts on. Null (not []) while
+ * injection is pending: an empty array is truthy and would satisfy a waitFor predicate before
+ * the renderChatMessageHTML hook has run.
  */
-export const moduleButtonsInPage = () => {
+export const moduleButtonsOnCardInPage = (msgId) => {
   const cards = document.querySelectorAll('.chat-scroll li.chat-message');
-  const card = cards[cards.length - 1];
+  const card = Array.from(cards).find((li) => li.dataset.messageId === msgId);
   if (!card) return null;
   const found = Array.from(card.querySelectorAll('.damageButton button')).map((b) => ({
     label: b.textContent.trim(),
@@ -192,6 +258,13 @@ export const moduleButtonsInPage = () => {
  * planned faces/number/value, proving the override was actually installed and that no pool
  * went un-overridden (the entry-matching is faces+number, first-unconsumed).
  */
+/** Page-function: reset the dice-override extension's GLOBAL queue (it survives across passes). */
+export const clearDiceQueueInPage = () => {
+  if (!Array.isArray(window.__diceOverrideQueue)) window.__diceOverrideQueue = [];
+  else window.__diceOverrideQueue.length = 0; // in place: keep any identity the extension captured
+  return window.__diceOverrideQueue.length;
+};
+
 export const diceQueueStateInPage = () =>
   (window.__diceOverrideQueue ?? []).map((e) => ({
     faces: e.faces,
@@ -245,7 +318,15 @@ function walkAndNeutralizeVolatileMetadata(node) {
   for (const value of Object.values(node)) walkAndNeutralizeVolatileMetadata(value);
 }
 
-export function buildFixtureMeta({ knightVersion, coreVersion, worldId, weaponItemId, diceOverrideApplied }) {
+export function buildFixtureMeta({
+  knightVersion,
+  coreVersion,
+  worldId,
+  weaponItemSeed,
+  weaponItemId,
+  diceOverrideApplied,
+  dicePlan,
+}) {
   return {
     fixtureMeta: {
       kind: 'knight-damage/attack-damage-message',
@@ -254,9 +335,9 @@ export function buildFixtureMeta({ knightVersion, coreVersion, worldId, weaponIt
       coreVersion,
       attackerActorId: ATTACKER_ACTOR_ID,
       victimTokenId: VICTIM_TOKEN_ID,
-      weaponItemSeed: STANDARD_WEAPON,
+      weaponItemSeed,
       weaponItemId,
-      dicePlan: { attack: ATTACK_DICE, damage: DAMAGE_DICE, expectedTargetValue: EXPECTED_TARGET_VALUE },
+      dicePlan,
       diceOverrideApplied,
       notes:
         'Damage message recorded from a scripted real attack (atk-pnj -> vic-knight) through the ' +
@@ -266,9 +347,107 @@ export function buildFixtureMeta({ knightVersion, coreVersion, worldId, weaponIt
   };
 }
 
-/** Recursively drops undefined/empty artifacts that JSON.stringify would omit anyway. */
+// Recursively drops undefined/empty artifacts that JSON.stringify would omit anyway.
 export function normalizeForWrite(value) {
   return JSON.parse(JSON.stringify(value));
+}
+
+// ── Shared integrity gate pieces (third review (b): plan-driven pool expectations) ──
+
+// The extension's exact pip layout (dice-override content.js:45-51): every active die carries
+// floor(total/count) and the LAST active die carries the remainder.
+export function planPips(plan) {
+  const base = Math.floor(plan.total / plan.count);
+  return Array.from(
+    { length: plan.count },
+    (_, i) => base + (i === plan.count - 1 ? plan.total - base * plan.count : 0),
+  );
+}
+
+// v14 stores ChatMessage.rolls as serialized JSON STRINGS but flags.knight.attaque as live
+// Roll OBJECTS inside the flag — accept both shapes (JSON.parse only on strings).
+function asRoll(entry) {
+  return typeof entry === 'string' ? JSON.parse(entry) : entry;
+}
+
+/**
+ * Gate every planned dice pool of one message: exactly pools.length === plans.length serialized
+ * pools, each plan (faces, count, total, pips) matched by EXACTLY ONE pool (order-independent:
+ * the knight damage phase can sub-roll BEFORE its main pool — the destructeur 2D6 at
+ * roll.mjs:2838-2844 precedes the 3D6 damage roll at :3011 — so pools are matched as a SET,
+ * never positionally). A plan matched twice or a pool without a plan means an un-overridden or
+ * hijacked pool — random pips sneaking into the shared baseline.
+ * Returns an array of human-readable failures (empty = gate passes).
+ */
+export function checkPools(label, entries, plans) {
+  const failures = [];
+  let pools;
+  try {
+    pools = entries.map(asRoll);
+  } catch (err) {
+    failures.push(`${label}: roll entries unparseable: ${err.message}`);
+    return failures;
+  }
+  if (pools.length !== plans.length) {
+    const shapes = pools.map((p) => (p.terms ?? []).filter((t) => t.class === 'Die').map((d) => [d.faces, d.number]));
+    failures.push(
+      `${label}: expected exactly ${plans.length} serialized roll pool(s) for this plan, got ${pools.length} (shapes ${JSON.stringify(shapes)})`,
+    );
+    return failures;
+  }
+  const unconsumed = [...plans];
+  for (const roll of pools) {
+    const dice = (roll.terms ?? []).filter((t) => t.class === 'Die');
+    const planIdx = unconsumed.findIndex(
+      (plan) => dice.length === 1 && dice[0].faces === plan.faces && dice[0].number === plan.count,
+    );
+    if (planIdx === -1) {
+      failures.push(
+        `${label}: unexpected pool ${JSON.stringify(dice.map((d) => [d.faces, d.number]))} (no unconsumed plan matches its die shape)`,
+      );
+      continue;
+    }
+    const plan = unconsumed.splice(planIdx, 1)[0];
+    const pips = (dice[0].results ?? []).filter((r) => r.active === true).map((r) => r.result);
+    if (JSON.stringify(pips) !== JSON.stringify(planPips(plan)))
+      failures.push(`${label}: pips ${JSON.stringify(pips)} != pinned plan pips ${JSON.stringify(planPips(plan))}`);
+    if (roll.total !== plan.total) failures.push(`${label}: roll total ${roll.total} != plan total ${plan.total}`);
+  }
+  for (const plan of unconsumed)
+    failures.push(
+      `${label}: planned pool ${plan.faces}d${plan.count} (total ${plan.total}) never appeared in the message`,
+    );
+  return failures;
+}
+
+// The exact HTML contract extractTraitValue (helpers.js:26-33) keys on, as the SYSTEM really
+// renders it (templates/dices/roll.html:198-208 + the doSimpleRoll callers): value-bearing
+// effects produce `<span class="label">LABEL</span>` immediately followed by
+// `<span class="value">+<sub-roll total></span>` — the module's own regex shape witnessed
+// live, not the fabricated traitSpan() unit shape. One source string per side of the pin.
+const traitSpanSource = (label) => `<span class="label">${label}<\\/span>\\s*<span class="value">\\+\\d*`;
+
+/** Same regex source the damage suite pins live against the replayed trait fixture. */
+export const TRAIT_SPAN_REGEX_SOURCE = traitSpanSource('Destructeur');
+
+/**
+ * Verify a trait VALUE span (label span immediately followed by a `+N` value span) really is
+ * present in a recorded message content, and that the extracted value matches the dice plan.
+ * Deliberately re-derives the module's own regex source (helpers.js:27-29) rather than a
+ * substring shortcut: this is the live witness the unit traitSpan() shape was invented for.
+ */
+export function checkTraitSpan(content, label, expectedValue) {
+  const failures = [];
+  const matches = Array.from(content.matchAll(new RegExp(traitSpanSource(label), 'g')));
+  if (matches.length !== 1) {
+    failures.push(`trait span (${label}): expected exactly 1 label+value span pair, got ${matches.length}`);
+    return failures;
+  }
+  const digits = matches[0][0].match(/\d+/);
+  const extracted = digits ? Number(digits[0]) : NaN;
+  if (extracted !== expectedValue)
+    failures.push(`trait span (${label}): extracted ${extracted} != pinned sub-roll total ${expectedValue}`);
+  return failures;
 }
 
 export const FIXTURES_DIR = fileURLToPath(new URL('../fixtures', import.meta.url));

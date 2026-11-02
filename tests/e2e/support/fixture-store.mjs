@@ -16,6 +16,28 @@ export const FIXTURES_DIR = fileURLToPath(new URL('../fixtures', import.meta.url
 export const PINNED_KNIGHT_VERSION = '3.58.38';
 export const STANDARD_FIXTURE_NAME = `attack-pnj-on-knight-standard-knight-${PINNED_KNIGHT_VERSION}.json`;
 
+// Phase 3 (third review (b)): the TRAIT-bearing weapon recording — the live witness for the
+// real `<span class="label">…</span><span class="value">+N` HTML the module's
+// extractTraitValue regexes over (the standard weapon only ever renders label-only spans).
+export const TRAIT_FIXTURE_NAME = `attack-pnj-on-knight-trait-knight-${PINNED_KNIGHT_VERSION}.json`;
+
+/** The committed filename of either family (a missing file is a loud error, never a silent skip). */
+export function committedFixturePath(fileName) {
+  const filePath = path.join(FIXTURES_DIR, fileName);
+  if (!existsSync(filePath)) {
+    throw new Error(
+      `committed fixture missing: ${fileName} (expected in ${FIXTURES_DIR}) — the committed recording is the ` +
+        'contract; run `npm run setup:e2e && npm run record:e2e` if it was genuinely invalidated',
+    );
+  }
+  return filePath;
+}
+
+/** Raw UTF-8 bytes of a committed fixture (for hash/byte-stability gates). */
+export function readFixtureText(fileName) {
+  return readFileSync(committedFixturePath(fileName), 'utf8');
+}
+
 export function listFixtureNames() {
   return readdirSync(FIXTURES_DIR).filter((name) => name.endsWith('.json'));
 }

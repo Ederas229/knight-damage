@@ -43,3 +43,6 @@ tests/e2e/config.mjs
 
 # Crash leftover of the atomic fixture write (record-fixtures.mjs renames tmp over the target)
 *.json.tmp
+
+# Dice-queue dumps from the last record:e2e run (record-fixtures.mjs debug aid, machine-local)
+tests/e2e/last-dice-queue*.json
