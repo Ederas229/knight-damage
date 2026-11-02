@@ -34,7 +34,6 @@
     "test:e2e:damage": "node tests/e2e/damage-knight.test.mjs",
     "test:e2e:vehicule-mecha": "node tests/e2e/damage-vehicule-mecha.test.mjs",
     "format": "prettier --write \"./**/*.(js|cjs|mjs|json|yml|css)\"",
-    "postinstall": "husky init",
     "prepare": "husky"
   },
   "devDependencies": {

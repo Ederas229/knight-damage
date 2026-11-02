@@ -44,8 +44,18 @@ import {
   messageContentInPage,
   messageFlagsInPage,
   storedContentPersistedInPage,
-  waitForCard,
 } from './support/chat.mjs';
+import {
+  controlTokenInPage,
+  deleteItemsInPage,
+  installActorUpdateCounterInPage,
+  readActorUpdatesInPage,
+  releaseAllTokensInPage,
+  restoreActorSystemInPage,
+  snapshotActorSystemInPage,
+  updateActorInPage,
+} from './support/actor-pages.mjs';
+import { replayFixture } from './support/replay.mjs';
 import {
   ATTACKER_ACTOR_ID,
   ATTACK_DICE,
@@ -96,11 +106,9 @@ const RECAP_HEADER = 'Récapitulatif des dégâts';
 const recapLine = (label, value) => `<div>${label} : ${value}</div>`;
 
 // ── Page-context helpers (stringify rule: no closures; values come in as trailing args) ──
-
-const replayMessageInPage = (data) =>
-  ChatMessage.create(data)
-    .then((m) => ({ id: m.id }))
-    .catch((err) => ({ error: `${err.name}: ${err.message}` }));
+// The GENERIC page helpers (replay create, snapshot/restore/update, control/release, update
+// counter, item delete) live in support/actor-pages.mjs — one place fixes discipline for all
+// damage suites. Only the knight-specific readers stay here.
 
 const readStatsInPage = (actorId) => {
   const s = game.actors.get(actorId).system;
@@ -134,58 +142,12 @@ const statsMatchInPage = (actorId, expected) => {
   return s;
 };
 
-const snapshotActorSystemInPage = (actorId) => JSON.parse(JSON.stringify(game.actors.get(actorId).system));
-
-// Merges the exact snapshot subtrees back — restore == what a full system update guarantees.
-const restoreActorSystemInPage = (actorId, snapshot) =>
-  game.actors
-    .get(actorId)
-    .update({ system: snapshot })
-    .then(() => true);
-
-const updateActorInPage = (actorId, data) =>
-  game.actors
-    .get(actorId)
-    .update(data)
-    .then(() => true);
-
-const controlVictimTokenInPage = (tokenId) => {
-  for (const token of [...canvas.tokens.controlled]) token.release();
-  const token = canvas.tokens.get(tokenId);
-  if (!token) throw new Error(`victim token ${tokenId} not on the active scene`);
-  token.control({ releaseOthers: true });
-  return { controlled: canvas.activeLayer?.controlled?.length ?? 0, layer: canvas.activeLayer?.name ?? null };
-};
-
-const releaseAllTokensInPage = () => {
-  for (const token of [...canvas.tokens.controlled]) token.release();
-  return canvas.tokens.controlled.length;
-};
-
-// INTENDED (author) double-update pin: apply()/DamageKnight.apply() ALWAYS issues exactly two
-// actor.update calls (damageBase.js:296+303) — counted live via a preUpdateActor listener.
-const installActorUpdateCounterInPage = () => {
-  if (window.__kdtActorUpdates) return 'already installed';
-  window.__kdtActorUpdates = [];
-  Hooks.on('preUpdateActor', (doc, data) => {
-    window.__kdtActorUpdates.push({ id: doc.id, data: JSON.parse(JSON.stringify(data ?? {})) });
-  });
-  return 'installed';
-};
-const readActorUpdatesInPage = () => window.__kdtActorUpdates ?? [];
-
 const toggleAttackerStatusInPage = async (actorId, statusId, active) => {
   const actor = game.actors.get(actorId);
   if (!actor) throw new Error(`attacker actor ${actorId} not found`);
   await actor.toggleStatusEffect(statusId, { active });
   return actor.effects.map((e) => Array.from(e.statuses));
 };
-
-const deleteItemsInPage = (actorId, itemIds) =>
-  game.actors
-    .get(actorId)
-    .deleteEmbeddedDocuments('Item', itemIds)
-    .then(() => itemIds.length);
 
 // Best-effort modal sweep (case8 finally): a stuck DialogV2.prompt is modal + rejectClose, so every
 // LATER case's clicks/dialog waits would degrade into 15s timeouts. v14 REGISTRY FACT: ui.windows
@@ -285,31 +247,13 @@ async function main(Framework) {
   // fixture's ONE faithful deviation — the recorded null speaker was a recorder artifact of an
   // unlinked prototype attacker, pinned by the unit contract (fixture-contract.test.mjs:52).
   async function replay(fixtureMessage, mutate) {
-    const data = structuredClone(fixtureMessage);
-    if (mutate) mutate(data);
-    data.speaker = { scene: 'kdtSceneMainAAAA', token: VICTIM_TOKEN_ID, actor: VICTIM_ACTOR_ID };
-    const first = await fw.executeInFoundry(replayMessageInPage, data);
-    let id = first?.id ?? null;
-    if (!id) {
-      console.log(
-        `[damage] replay create WITH rolls failed: ${first?.error ?? 'null'} (SERVER-SIDE message may exist as an orphan)`,
-      );
-      const noRolls = structuredClone(fixtureMessage);
-      if (mutate) mutate(noRolls);
-      delete noRolls.rolls;
-      const second = await fw.executeInFoundry(replayMessageInPage, noRolls);
-      id = second?.id ?? null;
-    }
-    if (!id) throw new Error('fixture replay failed (even without rolls)');
-    try {
-      await waitForCard(fw, id);
-    } catch (err) {
-      // The card never rendered: the message EXISTS document-side, so delete it here — the caller
-      // never received the id and cannot clean it up (review-5 B3: non-recap leak window).
-      await fw.executeInFoundry(deleteMessagesInPage, [id]).catch(() => {});
-      throw err;
-    }
-    return id;
+    return replayFixture(
+      fw,
+      fixtureMessage,
+      mutate,
+      { scene: 'kdtSceneMainAAAA', token: VICTIM_TOKEN_ID, actor: VICTIM_ACTOR_ID },
+      'damage',
+    );
   }
 
   // One damage-application: control victim -> pinned click -> recap discovered by flag+exclusion
@@ -322,7 +266,7 @@ async function main(Framework) {
   // Control is NOT released here: handleClickApplyDamage early-returns unless the active layer
   // still controls tokens (knight-damage.js:314), and cleanup() releases for every case.
   async function applyDamageAndAwait(msgId, action, expectedStats, recapSink) {
-    await fw.executeInFoundry(controlVictimTokenInPage, VICTIM_TOKEN_ID);
+    await fw.executeInFoundry(controlTokenInPage, VICTIM_TOKEN_ID);
     const preIds = await fw.executeInFoundry(listMessageIdsInPage);
     await fw.waitFor(clickOnMessageCard, 15000, msgId, `button[data-action="${action}"]`);
     const recap = await fw.waitFor(findNewRecapMessageInPage, 15000, preIds);
@@ -837,7 +781,7 @@ async function main(Framework) {
       const recapIds = [];
       try {
         msgId = await replay(standard.message);
-        await fw.executeInFoundry(controlVictimTokenInPage, VICTIM_TOKEN_ID);
+        await fw.executeInFoundry(controlTokenInPage, VICTIM_TOKEN_ID);
         const preIds = await fw.executeInFoundry(listMessageIdsInPage);
 
         // Shift+click with REAL modifiers (event.shiftKey reaches the jQuery handler). The click is

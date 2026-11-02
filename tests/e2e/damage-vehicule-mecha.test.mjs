@@ -41,8 +41,17 @@ import {
   findNewRecapMessageInPage,
   listMessageIdsInPage,
   storedContentPersistedInPage,
-  waitForCard,
 } from './support/chat.mjs';
+import {
+  controlTokenInPage,
+  installActorUpdateCounterInPage,
+  readActorUpdatesInPage,
+  releaseAllTokensInPage,
+  restoreActorSystemInPage,
+  snapshotActorSystemInPage,
+  updateActorInPage,
+} from './support/actor-pages.mjs';
+import { replayFixture } from './support/replay.mjs';
 
 /* global process */
 
@@ -75,19 +84,17 @@ const SEED_STATS_ATK = { sante: 10, armure: 0, energie: 12 };
 // RECAP LABEL CONTRACT (damageBase.js:307-347): header + one `<div>${label} : ${value}</div>` per
 // TRUTHY repartition key, labels Energie/Armure/Blindage/Guardian/Santé/Cohésion/Espoir — 'Blindage'
 // is MECHA-only (the vehicule track is armure), and 'passenger' has NO label at all: the carry lands
-// in the SECOND, flagless card — damageVehicule.js:55-65 'Dégâts sur les passagers :' and
-// damageMecha.js:47-57 'Dégâts sur le pilote :'.
+// in the SECOND, flagless card — damageVehicule.js:55-72 'Dégâts sur les passagers :' and
+// damageMecha.js:47-64 'Dégâts sur le pilote :'.
 const RECAP_HEADER = 'Récapitulatif des dégâts';
 const recapLine = (label, value) => `<div>${label} : ${value}</div>`;
 const SIDE_MARKER_VEH = 'Dégâts sur les passagers :';
 const SIDE_MARKER_MEC = 'Dégâts sur le pilote :';
 
 // ── Page-context helpers (stringify rule: no closures; values come in as trailing args) ──
-
-const replayMessageInPage = (data) =>
-  ChatMessage.create(data)
-    .then((m) => ({ id: m.id }))
-    .catch((err) => ({ error: `${err.name}: ${err.message}` }));
+// Generic page helpers (snapshot/restore/update, control/release, update counter, replay create)
+// live in support/actor-pages.mjs — shared with the knight damage suite so the cleanup and
+// orphan-handling discipline is fixed in ONE place. Only the type-specific stat readers stay here.
 
 const readVehStatsInPage = (actorId) => {
   const s = game.actors.get(actorId).system;
@@ -127,45 +134,6 @@ const mechaStatsMatchInPage = (actorId, expected) => {
   return got;
 };
 
-const snapshotActorSystemInPage = (actorId) => JSON.parse(JSON.stringify(game.actors.get(actorId).system));
-
-const restoreActorSystemInPage = (actorId, snapshot) =>
-  game.actors
-    .get(actorId)
-    .update({ system: snapshot })
-    .then(() => true);
-
-const updateActorInPage = (actorId, data) =>
-  game.actors
-    .get(actorId)
-    .update(data)
-    .then(() => true);
-
-const controlTokenInPage = (tokenId) => {
-  for (const token of [...canvas.tokens.controlled]) token.release();
-  const token = canvas.tokens.get(tokenId);
-  if (!token) throw new Error(`token ${tokenId} not on the active scene`);
-  token.control({ releaseOthers: true });
-  return { controlled: canvas.activeLayer?.controlled?.length ?? 0, layer: canvas.activeLayer?.name ?? null };
-};
-
-const releaseAllTokensInPage = () => {
-  for (const token of [...canvas.tokens.controlled]) token.release();
-  return canvas.tokens.controlled.length;
-};
-
-// INTENDED (author) double-update pin: apply() ALWAYS issues exactly two actor.update calls
-// (damageBase.js:273-305) — counted live via a preUpdateActor listener.
-const installActorUpdateCounterInPage = () => {
-  if (window.__kdtActorUpdates) return 'already installed';
-  window.__kdtActorUpdates = [];
-  Hooks.on('preUpdateActor', (doc, data) => {
-    window.__kdtActorUpdates.push({ id: doc.id, data: JSON.parse(JSON.stringify(data ?? {})) });
-  });
-  return 'installed';
-};
-const readActorUpdatesInPage = () => window.__kdtActorUpdates ?? [];
-
 // Pinned discovery of the SECOND (flagless) passenger/pilote card of an application — the INTENDED
 // author design (damageVehicule.js/damageMecha.js create it with NO knight-damage flags, so it has
 // no revert affordance of its own). Exclusion + exact-UNIQUE content marker, never "last card".
@@ -197,13 +165,15 @@ const revertDomStateInPage = (msgId) => {
 };
 
 // One-shot chat-log leak scan (document-side): flagged recaps AND the flagless side cards.
-const leakScanInPage = () => ({
+// Markers arrive as trailing args (stringify rule) so the constants at the top of the file are
+// the ONLY byte source for them (no inlined duplicates in the suite's last line of defense).
+const leakScanInPage = (vehMarker, mecMarker) => ({
   recaps: game.messages.contents
     .filter((m) => m.flags?.['knight-damage']?.isRecap === true)
     .map((m) => m.id)
     .join(','),
   sideCards: game.messages.contents
-    .filter((m) => m.content.includes('Dégâts sur les passagers :') || m.content.includes('Dégâts sur le pilote :'))
+    .filter((m) => m.content.includes(vehMarker) || m.content.includes(mecMarker))
     .map((m) => m.id)
     .join(','),
 });
@@ -266,27 +236,13 @@ async function main(Framework) {
   // revert click resolve through message.speaker, so the replay deviates from the recorded null
   // speaker deliberately and identically to the knight suite.
   async function replay(mutate, victimTokenId, victimActorId) {
-    const data = structuredClone(standard.message);
-    if (mutate) mutate(data);
-    data.speaker = { scene: SCENE_ID, token: victimTokenId, actor: victimActorId };
-    const first = await fw.executeInFoundry(replayMessageInPage, data);
-    let id = first?.id ?? null;
-    if (!id) {
-      console.log(`[vm] replay create WITH rolls failed: ${first?.error ?? 'null'} (orphan possible)`);
-      const noRolls = structuredClone(standard.message);
-      if (mutate) mutate(noRolls);
-      delete noRolls.rolls;
-      const second = await fw.executeInFoundry(replayMessageInPage, noRolls);
-      id = second?.id ?? null;
-    }
-    if (!id) throw new Error('fixture replay failed (even without rolls)');
-    try {
-      await waitForCard(fw, id);
-    } catch (err) {
-      await fw.executeInFoundry(deleteMessagesInPage, [id]).catch(() => {});
-      throw err;
-    }
-    return id;
+    return replayFixture(
+      fw,
+      standard.message,
+      mutate,
+      { scene: SCENE_ID, token: victimTokenId, actor: victimActorId },
+      'vm',
+    );
   }
 
   // One damage application on a vehicule/mecha victim: control token -> pinned click -> recap AND
@@ -804,7 +760,7 @@ async function main(Framework) {
       statsEqual(atkEnd, SEED_STATS_ATK),
       `got ${JSON.stringify(atkEnd)}`,
     );
-    const leaks = await fw.executeInFoundry(leakScanInPage);
+    const leaks = await fw.executeInFoundry(leakScanInPage, SIDE_MARKER_VEH, SIDE_MARKER_MEC);
     push(
       'poisoning self-check: NO knight-damage recap AND NO flagless passenger/pilote card survives in the (boot-persistent) chat log',
       leaks.recaps === '' && leaks.sideCards === '',
