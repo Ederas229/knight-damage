@@ -35,10 +35,13 @@ import {
 import {
   ATTACKER_ACTOR_ID,
   ATTACKER_TOKEN_NAME,
+  ATTACK_DICE,
   DAMAGE_DICE,
   EXPECTED_TARGET_VALUE,
   EXPECTED_TRAIT_VALUE,
+  STANDARD_DAMAGE_PLANS,
   STANDARD_WEAPON,
+  TRAIT_DAMAGE_PLANS,
   TRAIT_SUBDICE,
   TRAIT_WEAPON,
   VICTIM_TOKEN_ID,
@@ -68,10 +71,10 @@ const FIXTURES_DIR = path.join(HERE, 'fixtures');
 const QUEUE_FILE = path.join(HERE, 'last-dice-queue.json');
 const TRAIT_QUEUE_FILE = path.join(HERE, 'last-dice-queue-trait.json');
 
-// Damage-phase dice plans per weapon (the attack pool is always ATTACK 3D6 total 7: two successes,
-// one failure -> no exploit re-roll hijacking the queue, roll.mjs:1008).
-const STANDARD_DAMAGE_PLAN = [DAMAGE_DICE]; // 3D6 total 12 -> per-target value 12 + fixe 2 = 14
-const TRAIT_DAMAGE_PLAN = [TRAIT_SUBDICE, DAMAGE_DICE]; // destructeur 2D6 sub-roll, then 3D6 damage
+// Damage-phase dice plans: imported from support/attack-run.mjs (STANDARD_DAMAGE_PLANS /
+// TRAIT_DAMAGE_PLANS) — queue seeding AND the pool gates share that one source (the attack pool is
+// always ATTACK 3D6 total 7: two successes, one failure -> no exploit re-roll hijacking the queue,
+// roll.mjs:1008).
 
 if (respawnPreservingSymlinks()) {
   // Parent: the symlink-preserving child inherited stdio and carries the run.
@@ -153,12 +156,13 @@ async function main(Framework) {
       atkTokenId: sceneOk.atk,
       weaponItemId: weaponInfo.itemId,
       attackDice: { faces: 6, count: 3, total: 7 },
-      damagePlan: STANDARD_DAMAGE_PLAN,
+      damagePlan: STANDARD_DAMAGE_PLANS,
       formula: '3D6',
     });
 
     // 3. Build + gate the standard fixture, compare to the committed baseline BEFORE writing.
     const standardFixture = buildFixture(pass1, {
+      family: 'standard',
       versions,
       weaponItemSeed: STANDARD_WEAPON,
       weaponItemId: weaponInfo.itemId,
@@ -188,11 +192,12 @@ async function main(Framework) {
       atkTokenId: sceneOk.atk,
       weaponItemId: traitInfo.itemId,
       attackDice: { faces: 6, count: 3, total: 7 },
-      damagePlan: TRAIT_DAMAGE_PLAN,
+      damagePlan: TRAIT_DAMAGE_PLANS,
       formula: '3D6',
     });
 
     const traitFixture = buildFixture(pass2, {
+      family: 'trait',
       versions,
       weaponItemSeed: TRAIT_WEAPON,
       weaponItemId: traitInfo.itemId,
@@ -224,9 +229,32 @@ async function main(Framework) {
       console.log(`[record] removed stale fixture ${stale} (older knight version)`);
     }
 
-    // Self-cleanup: the recorder's pinned-weapon creations must not survive into the next consumer
-    // (a damage run right after record would collide with the pinned _ids; guardPinnedId hard-fails
-    // on leftovers BY DESIGN for records, but the published world should stay clean for others).
+    // (Self-cleanup lives in the finally-block sweepPinnedWeapons call: it runs on EVERY exit, so
+    // pinned-weapon creations never survive a mid-run throw into the next consumer.)
+
+    console.log('\nE2E RECORD: PASS (both fixtures gated + published)');
+    process.exitCode = 0;
+  } catch (err) {
+    await fw.screenshot('record-failure.png').catch(() => {});
+    throw err;
+  } finally {
+    // Runs on EVERY exit (success, gate throw, guardPinnedId stale-world hard-fail): the attacker
+    // never keeps the pinned weapons after this process stops, so the next consumer starts clean
+    // and the failure log proves the sweep happened.
+    await sweepPinnedWeapons(fw);
+    await fw.stop();
+    console.log('Foundry server + browser stopped.');
+  }
+}
+
+/**
+ * Remove this recorder's PINNED weapons from the attacker (best-effort: a page that never booted,
+ * or a delete that fails at teardown, must not mask the run's real error). Logged with the count
+ * either way so success and failure paths are both auditable in the run log.
+ */
+async function sweepPinnedWeapons(fw) {
+  if (!fw.page) return;
+  try {
     const leftover = await fw.executeInFoundry(
       (actorId, pinnedIds) => {
         const actor = game.actors.get(actorId);
@@ -237,16 +265,11 @@ async function main(Framework) {
       ATTACKER_ACTOR_ID,
       [STANDARD_WEAPON._id, TRAIT_WEAPON._id],
     );
-    console.log(`[record] removed its ${leftover} pinned weapon(s) from the attacker (published world stays clean)`);
-
-    console.log('\nE2E RECORD: PASS (both fixtures gated + published)');
-    process.exitCode = 0;
+    console.log(
+      `[record] finally-sweep removed ${leftover} pinned weapon(s) from the attacker (published world stays clean)`,
+    );
   } catch (err) {
-    await fw.screenshot('record-failure.png').catch(() => {});
-    throw err;
-  } finally {
-    await fw.stop();
-    console.log('Foundry server + browser stopped.');
+    console.log(`[record] finally-sweep FAILED (pinned weapons may linger on the attacker): ${err.message ?? err}`);
   }
 }
 
@@ -324,8 +347,15 @@ async function runAttackPass(fw, { label, atkTokenId, weaponItemId, attackDice, 
   return { ...dumped, target, liveButtons, queueState };
 }
 
-/** Assemble one fixture object (same shape as the committed baseline: fixtureMeta header + stripped message). */
-function buildFixture(pass, { versions, weaponItemSeed, weaponItemId, dicePlan, extraMeta }) {
+/**
+ * Assemble one fixture object (same shape as the committed baseline: fixtureMeta header + stripped
+ * message). `family` ('standard' | 'trait') is the EXPLICIT discriminator for the trait-branch
+ * gates (pool plan set, trait-span witness, baseline filename) — no reliance on weaponItemSeed
+ * object identity; weaponItemSeed stays as the data source (raw round-trip compare + fixtureMeta).
+ */
+function buildFixture(pass, { family, versions, weaponItemSeed, weaponItemId, dicePlan, extraMeta }) {
+  if (family !== 'standard' && family !== 'trait') throw new Error(`unknown fixture family: ${family}`);
+  const isTrait = family === 'trait';
   const clean = normalizeForWrite(stripVolatileKeys(pass.object));
   const failures = [];
 
@@ -340,19 +370,12 @@ function buildFixture(pass, { versions, weaponItemSeed, weaponItemId, dicePlan, 
   // Plan-driven pool gates (third review (b)): the damage message serializes the damage-phase pools
   // (standard: exactly 1; trait: 2 including the destructeur 2D6 sub-roll), and the attack pool in
   // flags.knight.attaque. Order-independent set matching (the sub-roll precedes the main roll).
-  failures.push(
-    ...checkPools('damage rolls', clean.rolls ?? [], [
-      DAMAGE_DICE,
-      ...(weaponItemSeed === TRAIT_WEAPON ? [TRAIT_SUBDICE] : []),
-    ]),
-  );
-  failures.push(
-    ...checkPools('flags.knight.attaque', clean.flags?.knight?.attaque ?? [], [{ faces: 6, count: 3, total: 7 }]),
-  );
+  failures.push(...checkPools('damage rolls', clean.rolls ?? [], isTrait ? TRAIT_DAMAGE_PLANS : STANDARD_DAMAGE_PLANS));
+  failures.push(...checkPools('flags.knight.attaque', clean.flags?.knight?.attaque ?? [], [ATTACK_DICE]));
 
-  // Raw round-trip of the weapon's traits, and for the trait pass the VALUE-BEARING span witness:
+  // Raw round-trip of the weapon's traits, and for the trait family the VALUE-BEARING span witness:
   // the module's extractTraitValue regex shape seen live on the SYSTEM's own rendered HTML.
-  if (weaponItemSeed === TRAIT_WEAPON) {
+  if (isTrait) {
     failures.push(...checkTraitSpan(clean.content, 'Destructeur', EXPECTED_TRAIT_VALUE));
     if (clean.flags.knight.weapon.effets.raw.includes('destructeur') === false)
       failures.push('trait fixture: destructeur keyword missing from the raw round-trip (bool source for the module)');
@@ -360,12 +383,10 @@ function buildFixture(pass, { versions, weaponItemSeed, weaponItemId, dicePlan, 
 
   // Drift guard: if the committed fixture exists, victim aspects + attacker snapshot subtrees must
   // match (a previous damage case that did not revert would show up HERE, before anything writes).
-  const baselinePath = path.join(
-    FIXTURES_DIR,
-    weaponItemSeed === TRAIT_WEAPON ? TRAIT_FIXTURE_NAME : STANDARD_FIXTURE_NAME,
-  );
+  const fixtureName = isTrait ? TRAIT_FIXTURE_NAME : STANDARD_FIXTURE_NAME;
+  const baselinePath = path.join(FIXTURES_DIR, fixtureName);
   if (existsSync(baselinePath)) {
-    const { message: baseline } = loadRecordedFixture(path.basename(baselinePath));
+    const { message: baseline } = loadRecordedFixture(fixtureName);
     const driftKey = (msg) => ({
       victimAspects: msg.flags.knight.targets.find((t) => t.id === VICTIM_TOKEN_ID)?.aspects ?? null,
       attackerSnapshot: msg.flags.knight.actor,

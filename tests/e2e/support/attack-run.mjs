@@ -88,20 +88,15 @@ export const EXPECTED_TARGET_VALUE = DAMAGE_DICE.total + STANDARD_WEAPON.system.
 export const TRAIT_SUBDICE = Object.freeze({ faces: 6, count: 2, total: 6 }); // pips [3,3]
 export const EXPECTED_TRAIT_VALUE = TRAIT_SUBDICE.total; // span renders +6, module extracts 6
 
-// PLAN-DRIVEN pool expectations (third review (b): the "exactly one pool per phase" gate is
-// the STANDARD plan; the trait plan adds the destructeur sub-roll to the damage message).
-export const STANDARD_ATTACK_PLANS = Object.freeze([ATTACK_DICE]);
+// PLAN-DRIVEN dice plans (third review (b): the "exactly one pool per phase" gate is the STANDARD
+// plan; the trait plan adds the destructeur sub-roll). SINGLE SOURCE OF TRUTH: record-fixtures.mjs
+// seeds the dice-override queue from these arrays AND gates the serialized pools against them, so
+// the two can never drift apart. The ORDER is the queue-seeding (chronological) order — the
+// destructeur 2D6 sub-roll precedes the 3D6 damage roll (roll.mjs:2838 vs :3011); the queue
+// matches pools by (faces, number) first-unconsumed, and checkPools matches the serialized pools
+// as a SET, so only the seeded queue-state audit (last-dice-queue*.json) depends on this order.
 export const STANDARD_DAMAGE_PLANS = Object.freeze([DAMAGE_DICE]);
-export const TRAIT_ATTACK_PLANS = Object.freeze([ATTACK_DICE]);
-export const TRAIT_DAMAGE_PLANS = Object.freeze([DAMAGE_DICE, TRAIT_SUBDICE]);
-
-export function fixtureFileName(knightVersion) {
-  return `attack-pnj-on-knight-standard-knight-${knightVersion}.json`;
-}
-
-export function traitFixtureFileName(knightVersion) {
-  return `attack-pnj-on-knight-trait-knight-${knightVersion}.json`;
-}
+export const TRAIT_DAMAGE_PLANS = Object.freeze([TRAIT_SUBDICE, DAMAGE_DICE]);
 
 // ── Page-context functions (framework STRINGIFY RULE: no closures over test vars; values come
 //    in as trailing args) ──
@@ -426,9 +421,6 @@ export function checkPools(label, entries, plans) {
 // `<span class="value">+<sub-roll total></span>` — the module's own regex shape witnessed
 // live, not the fabricated traitSpan() unit shape. One source string per side of the pin.
 const traitSpanSource = (label) => `<span class="label">${label}<\\/span>\\s*<span class="value">\\+\\d*`;
-
-/** Same regex source the damage suite pins live against the replayed trait fixture. */
-export const TRAIT_SPAN_REGEX_SOURCE = traitSpanSource('Destructeur');
 
 /**
  * Verify a trait VALUE span (label span immediately followed by a `+N` value span) really is

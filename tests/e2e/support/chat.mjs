@@ -2,15 +2,13 @@
 // docs/testing-plan.md: every card access is pinned to a specific message id — the suites must
 // NEVER sample "the last message"/"the last card", and the world chat log is persistent across runs).
 //
-// IMPORTANT (Phase 3 finding, verified live): the framework's fw.page targets the PRIMARY
-// Playwright window, but Foundry renders its sidebar (chat log, cards, dialogs) inside the separate
-// APP WINDOW (game.windows.app — its own Playwright page in the persistent context, URL ends with
-// #hud). DOM reads/clicks for chat cards MUST go through clickOnMessageCardReal / the app page —
-// fw.page sees no chat DOM at all, and executeInFoundry runs in the primary window's Foundry
-// context (documents are shared, DOM is not). Every helper below takes the app page or fw.
-
-/** Message-id-pinned card selector (the only sanctioned way to address a card in the DOM). */
-export const cardSelector = (msgId) => `li.chat-message[data-message-id="${msgId}"]`;
+// HOW these run (fw = the foundryvtt-test-framework subclass built in support/framework.mjs): every
+// helper below is a PAGE FUNCTION handed to fw.executeInFoundry / fw.waitFor. The framework
+// transports the function SOURCE (fn.toString into a Playwright page.evaluate), so helpers must NOT
+// close over node/module scope — every value arrives as a trailing arg and in-page selectors are
+// INLINED. fw drives ONE Playwright page hosting the whole Foundry app (documents AND the chat
+// sidebar DOM share that single window), so document-level reads and chat-card DOM reads/clicks all
+// go through the same fw calls.
 
 /** Document-level (executeInFoundry): every current chat message id — baseline for "which id is NEW". */
 export const listMessageIdsInPage = () => game.messages.contents.map((m) => m.id);
@@ -48,8 +46,8 @@ export const clickOnMessageCard = (msgId, selector, modifiers = []) => {
 
 /**
  * Page-function: is the PINNED card rendered in the DOM yet? (null while absent -> waitFor retries).
- * The selector is INLINED: page.evaluate transports this function's SOURCE, so referencing the
- * module-scope cardSelector helper would ReferenceError in-page on every poll (and waitForCondition
+ * The selector is INLINED: page.evaluate transports this function's SOURCE, so referencing ANY
+ * module-scope selector helper would ReferenceError in-page on every poll (and waitForCondition
  * swallows those errors — the wait then silently spins to its timeout).
  */
 export const cardRenderedInPage = (msgId) =>
@@ -61,9 +59,18 @@ export async function waitForCard(fw, msgId, timeout = 15000) {
   return msgId;
 }
 
-/** Page-function: the PINNED card's innerHTML (null while the card is not rendered yet). INLINED selector (page-source transport rule). */
+/**
+ * Page-function: the PINNED card's innerHTML (null while the card is not rendered yet). INLINED selector (page-source transport rule).
+ */
 export const messageContentInPage = (msgId) =>
   document.querySelector(`li.chat-message[data-message-id="${msgId}"]`)?.innerHTML ?? null;
+
+/**
+ * DOCUMENT-level (executeInFoundry): the PINNED message's STORED content — the serialized
+ * `content` field, NOT the live DOM. A module can mutate the card DOM directly without touching
+ * the document; only this probe can pin what a message.update({content}) actually persisted.
+ */
+export const storedMessageContentInPage = (msgId) => game.messages.get(msgId)?.content ?? null;
 
 /** Page-function: the module's damage buttons on the PINNED card (null until injection happened). */
 export const damageButtonsOnCardInPage = (msgId) => {
@@ -138,20 +145,18 @@ export const messageFlagsInPage = (msgId, flagKey) => {
   return { value: value ?? null };
 };
 
-/** Page-function: does a fragment occur in the PINNED card's rendered HTML? ({found, contains}). INLINED selector. */
-export const cardHtmlContainsInPage = (msgId, fragment) => {
-  const card = document.querySelector(`li.chat-message[data-message-id="${msgId}"]`);
-  if (!card) return { found: false, contains: false };
-  return { found: true, contains: card.innerHTML.includes(fragment) };
-};
-
 /**
  * Page-function cleanup: delete the given chat messages by PINNED id (case isolation; the world
  * chat log is persistent across runs, so every case removes exactly what it created).
+ * v14 CORE API FACT (common/abstract/document.mjs:688): the static Document.delete was REPLACED by
+ * Document.deleteDocuments(ids, operation) — no deprecated alias exists (unlike applyRollMode).
+ * The previous ChatMessage.delete(...) call threw a TypeError that the callers' catch(() => {})
+ * swallowed, so the chat log NEVER actually shrank — a latent Phase-3 infra bug exposed live by
+ * the suite-end recap-leak self-check. The delete PROMISE is returned: page.evaluate awaits it, so
+ * cleanup has genuinely completed before the caller proceeds (never race fw.stop()).
  */
 export const deleteMessagesInPage = (ids) => {
   const present = game.messages.contents.filter((m) => ids.includes(m.id)).map((m) => m.id);
   if (present.length === 0) return 0;
-  void ChatMessage.delete(present);
-  return present.length;
+  return ChatMessage.deleteDocuments(present).then(() => present.length);
 };
