@@ -111,6 +111,17 @@ export async function loadFramework() {
       this.serverProcess.on('error', (err) => {
         throw new Error(`Foundry server failed to start: ${err.message}`);
       });
+      // Last-resort orphan cleanup (review 3): the upstream throw-inside-'error'-listener pattern
+      // (kept verbatim for the issue batch) surfaces as an UNCAUGHT exception, so the entry
+      // scripts' finally-cleanup (fw.stop) may never run — without this the spawned server would
+      // outlive us holding port 30001 AND test-data's options.json.lock, poisoning the next run.
+      process.once('exit', () => {
+        try {
+          this.serverProcess?.kill();
+        } catch {
+          /* already dead */
+        }
+      });
     }
 
     async _login() {
@@ -160,9 +171,11 @@ export async function loadFramework() {
       // Per-WORKTREE profile inside the (gitignored) test-data dir — deliberately NOT the upstream
       // location (chrome-profile/ at the shared framework-clone root): two checkouts running the
       // suite against the ONE canonical clone would launch two launchPersistentContext calls on one
-      // profile ("profile in use"). test-data/ is worktree-local and wiped by setup:e2e, so each run
-      // starts from a fresh profile anyway; the clone itself (FoundryVTT-Node, dice extension) stays
-      // read-only and is safe to share.
+      // profile ("profile in use"). runSetup does NOT wipe test-data wholesale, so setup:e2e
+      // explicitly DELETES this profile — without that, Chrome's persistent cache could serve a
+      // stale knight-damage.js after prepare:e2e rebuilt dist/. The clone itself (FoundryVTT-Node,
+      // dice extension) stays read-only and is safe to share. NOTE: the framework's openAsUser()
+      // still defaults to a clone-root profile — override it before any multi-user Phase-3 case.
       const chromeProfilePath = path.join(testDataPath, 'chrome-profile');
 
       console.log('[foundryvtt-test-framework] Launching browser...');

@@ -10,12 +10,12 @@
 // Pass KDT_E2E_RAW_DUMP=1 to also dump the unstripped message object under test-data/recordings/
 // (gitignored) for debugging.
 
-import { existsSync, mkdirSync, renameSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import config from './config.mjs';
 import { acquireSpawnMutex } from './support/spawn-lock.mjs';
 import { loadFramework, respawnPreservingSymlinks } from './support/framework.mjs';
-import { loadRecordedFixture } from './support/fixture-store.mjs';
+import { listFixtureNames, loadRecordedFixture } from './support/fixture-store.mjs';
 import {
   ATTACKER_ACTOR_ID,
   ATTACKER_TOKEN_NAME,
@@ -28,6 +28,7 @@ import {
   VICTIM_TOKEN_NAME,
   buildFixtureMeta,
   createWeaponInPage,
+  diceQueueStateInPage,
   dumpLastDamageMessageInPage,
   fixtureFileName,
   moduleButtonsInPage,
@@ -158,12 +159,20 @@ async function main(Framework) {
     const liveButtons = await fw.waitFor(moduleButtonsInPage, 15000);
     console.log(`[record] module buttons on the live damage message: ${JSON.stringify(liveButtons)}`);
 
+    // 7b. Proof the dice-override extension was installed and consumed BOTH planned pools.
+    const queueState = await fw.executeInFoundry(diceQueueStateInPage);
+    console.log(`[record] dice-override queue: ${JSON.stringify(queueState)}`);
+
     // 8. Strip volatiles, attach metadata, gate, THEN write. The integrity gate runs BEFORE the
     //    write on purpose: the fixture file is the shared source of truth for BOTH suites (the
     //    unit suite imports it) — a failed/drifted recording must never overwrite the known-good
     //    baseline; exit code alone would leave a polluted file that the unit contract test then
     //    adapts to (its value pin softens when diceOverrideApplied is false).
-    const clean = stripVolatileKeys(dumped.object);
+    // Normalize ONCE before every gate and the drift comparison (review 3: comparing a
+    // pre-normalize object against a post-normalize baseline only works while no Date/Set/
+    // undefined-valued key appears inside the compared subtrees — normalize-first removes
+    // that class of false positive entirely; normalizeForWrite is an idempotent JSON round-trip).
+    const clean = normalizeForWrite(stripVolatileKeys(dumped.object));
     const fixture = normalizeForWrite({
       ...buildFixtureMeta({
         knightVersion: versions.knight,
@@ -185,6 +194,72 @@ async function main(Framework) {
       failures.push(`weapon.effets.raw drifted: ${JSON.stringify(clean.flags.knight.weapon.effets.raw)}`);
     if (!liveButtons || liveButtons.length < 5)
       failures.push(`module buttons missing on the live message: ${liveButtons}`);
+
+    // Queue-consumption gate: every planned pool must have been CONSUMED by a roll (proves the
+    // extension patch was installed and no pool went random).
+    const plannedQueue = [
+      { faces: ATTACK_DICE.faces, number: ATTACK_DICE.count, value: ATTACK_DICE.total },
+      { faces: DAMAGE_DICE.faces, number: DAMAGE_DICE.count, value: DAMAGE_DICE.total },
+    ];
+    if (
+      queueState.length !== plannedQueue.length ||
+      queueState.some(
+        (e, i) =>
+          !e.consumed ||
+          e.faces !== plannedQueue[i].faces ||
+          e.number !== plannedQueue[i].number ||
+          e.value !== plannedQueue[i].value,
+      )
+    )
+      failures.push(`dice-override queue not fully consumed as planned: ${JSON.stringify(queueState)}`);
+
+    // PIP-level determinism gate (review 3): target value 14 alone is NOT determinism. The knight
+    // system can roll an EXTRA exploit pool with the SAME 3D6 formula (roll.mjs:1008-1019, gated
+    // by ~12.5% all-even attack), and the extension matches pools by faces+number first-unconsumed
+    // (content.js:22-27) — so the extra pool would steal the damage queue entry and the real
+    // damage pool would roll genuinely random dice. ~4.6% of random 3d6 sums equal 12, silently
+    // baking random pips into the baseline the 155-test unit suite consumes. Pin the POOL COUNT
+    // (an exploit pool => 2 entries in rolls[]/attaque[]), the die shape, and the extension's exact
+    // base/remainder pips (content.js:45-51: last active die carries the remainder).
+    const planPips = (plan) => {
+      const base = Math.floor(plan.total / plan.count);
+      return Array.from(
+        { length: plan.count },
+        (_, i) => base + (i === plan.count - 1 ? plan.total - base * plan.count : 0),
+      );
+    };
+    // v14 stores ChatMessage.rolls as serialized JSON STRINGS but flags.knight.attaque as live
+    // Roll OBJECTS inside the flag — accept both shapes (JSON.parse only on strings).
+    const asRoll = (e) => (typeof e === 'string' ? JSON.parse(e) : e);
+    const checkPool = (label, entries, plan) => {
+      let pools;
+      try {
+        pools = entries.map(asRoll);
+      } catch (err) {
+        failures.push(`${label}: roll entries unparseable: ${err.message}`);
+        return;
+      }
+      if (pools.length !== 1) {
+        failures.push(
+          `${label}: expected exactly 1 serialized roll pool, got ${pools.length} (an extra pool means an exploit re-roll hijacked the dice queue)`,
+        );
+        return;
+      }
+      const roll = pools[0];
+      const dice = (roll.terms ?? []).filter((t) => t.class === 'Die');
+      if (dice.length !== 1 || dice[0].faces !== plan.faces || dice[0].number !== plan.count) {
+        failures.push(
+          `${label}: die shape ${JSON.stringify(dice.map((d) => [d.faces, d.number]))} != plan ${plan.faces}d${plan.count}`,
+        );
+      } else {
+        const pips = (dice[0].results ?? []).filter((r) => r.active === true).map((r) => r.result);
+        if (JSON.stringify(pips) !== JSON.stringify(planPips(plan)))
+          failures.push(`${label}: pips ${JSON.stringify(pips)} != pinned plan pips ${JSON.stringify(planPips(plan))}`);
+      }
+      if (roll.total !== plan.total) failures.push(`${label}: roll total ${roll.total} != plan total ${plan.total}`);
+    };
+    checkPool('damage rolls', clean.rolls ?? [], DAMAGE_DICE);
+    checkPool('flags.knight.attaque', clean.flags?.knight?.attaque ?? [], ATTACK_DICE);
 
     // Drift guard (review 2): the fresh-world assumption only protects against WEAPON residue —
     // a Phase-3 damage case that does not revert mutates the victim actor (embedded snapshot
@@ -222,9 +297,20 @@ async function main(Framework) {
       // pre-commit vitest must never observe a half-written JSON.
       mkdirSync(FIXTURES_DIR, { recursive: true });
       const tmpPath = `${outPath}.tmp`;
+      rmSync(tmpPath, { force: true }); // clear a leftover from a crashed earlier write
       writeFileSync(tmpPath, `${JSON.stringify(fixture, null, 2)}\n`, 'utf8');
       renameSync(tmpPath, outPath);
       console.log(`[record] wrote ${path.relative(process.cwd(), outPath)}`);
+
+      // Version-bump hygiene (review 3): bumping PINNED_KNIGHT_VERSION renames the standard
+      // fixture; prune the old-version ones so the shared baseline is always exactly one file.
+      for (const stale of listFixtureNames().filter(
+        (n) => n !== fileName && n.startsWith('attack-pnj-on-knight-standard-knight-'),
+      )) {
+        rmSync(path.join(FIXTURES_DIR, stale));
+        console.log(`[record] removed stale fixture ${stale} (older knight version)`);
+      }
+
       console.log(`\nE2E RECORD: PASS (${fileName})`);
       process.exitCode = 0;
     }

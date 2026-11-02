@@ -10,3 +10,7 @@ package-lock.json
 # Recorded e2e fixtures: format is canonically the recorder's JSON.stringify(_, null, 2) output
 # (tests/e2e/record-fixtures.mjs); re-formatting them breaks byte-stable re-record comparisons.
 tests/e2e/fixtures/
+
+# Explicit (not just Prettier 3's default ignore of .gitignored paths): never format e2e run state
+# (LevelDB dirs, chrome profile, logs) if ignore-path semantics ever change.
+test-data

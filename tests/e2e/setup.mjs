@@ -3,8 +3,9 @@
 // runSetup only WARNS about missing assets, so we pre-verify every asset it is about to copy and
 // also fail on any warning it emits.
 
-import { access, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
+import { access, cp, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { runSetup } from 'foundryvtt-test-framework/setup';
 import config from './config.mjs';
 import { acquireSpawnMutex } from './support/spawn-lock.mjs';
@@ -72,6 +73,27 @@ async function main() {
     process.exit(1);
   }
 
+  // World-seed overlay (review 3): runSetup copies the world from sourceDataPath — but that is
+  // untracked, machine-specific state. The REPO-COMMITTED seed (tests/e2e/world-seed/<id>/) is
+  // the reproducible source of truth, so when it exists it OVERWRITES the runSetup copy and the
+  // fixture chain becomes re-runnable on any machine with a licensed Foundry install. Pre-seed
+  // checkouts (or custom worlds without a seed) fall back to the runSetup copy — loudly noted.
+  const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
+  for (const id of config.worldsToCopy ?? []) {
+    const seedDir = path.join(repoRoot, 'tests', 'e2e', 'world-seed', id);
+    const targetDir = path.join(config.testDataPath, 'Data', 'worlds', id);
+    if (await exists(seedDir)) {
+      await rm(targetDir, { recursive: true, force: true });
+      await cp(seedDir, targetDir, { recursive: true });
+      console.log(`setup:e2e: world "${id}" overlaid with the repo-committed seed (source of truth).`);
+    } else {
+      console.warn(
+        `setup:e2e: WARNING — no repo seed at tests/e2e/world-seed/${id}/; using the machine-local ` +
+          'Data copy (untracked state — record:e2e reproducibility depends on it surviving intact)',
+      );
+    }
+  }
+
   // The framework copies world.json verbatim, and a fresh test-data boots in Foundry's "en"
   // default. This module's damage regexes (and the recorded chat fixtures) are anchored on the
   // knight system's FRENCH chat HTML, so the test world must boot in fr.
@@ -98,10 +120,19 @@ async function main() {
 
   // Hygiene: a previous e2e run killed with SIGTERM leaves Foundry's proper-lockfile lock
   // directory (options.json.lock/) behind for up to its 10 s stale window. Framework v2.0.0
-  // runSetup itself never boots a server (validate + copy only) — the boot-time port-wait +
-  // stale-lock purge lives in support/framework.mjs:_spawnServer — but clearing the artifact
-  // here keeps the copied tree clean for whichever script boots next.
+  // runSetup itself never boots a server (validate + copy only — and it wipes/re-copies only
+  // Data/systems|modules|worlds + license, NOT the whole test-data tree) — the boot-time
+  // port-wait + stale-lock purge lives in support/framework.mjs:_spawnServer — but clearing the
+  // artifact here keeps the copied tree clean for whichever script boots next.
   await rm(path.join(optionsPath + '.lock'), { recursive: true, force: true });
+
+  // The persistent chrome-profile (test-data/chrome-profile, see support/framework.mjs) is NOT
+  // re-copied by runSetup, so it SURVIVES setup — and with it Chrome's HTTP/disk cache: after
+  // prepare:e2e rebuilds dist/, the page could serve yesterday's knight-damage.js and the suite
+  // would silently grade a stale bundle (review 3). Delete it here so every session boots with
+  // a provably fresh profile against the freshly copied module.
+  await rm(path.join(config.testDataPath, 'chrome-profile'), { recursive: true, force: true });
+  console.log('setup:e2e: removed persistent chrome-profile (forces fresh cache per session).');
 
   for (const id of config.worldsToCopy ?? []) {
     const worldJsonPath = path.join(config.testDataPath, 'Data', 'worlds', id, 'world.json');

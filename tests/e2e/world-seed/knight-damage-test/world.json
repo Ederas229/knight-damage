@@ -1,0 +1,13 @@
+{
+  "title": "Knight Damage Test",
+  "id": "knight-damage-test",
+  "system": "knight",
+  "coreVersion": "14.369",
+  "compatibility": {
+    "minimum": "14",
+    "verified": "14.369"
+  },
+  "systemVersion": "3.58.38",
+  "description": "E2E test world for the knight-damage module. Fixed fixtures: atk-pnj (pnj attacker), vic-knight (standard unit-suite fixture), vic-vehicule, vic-mecha. See docs/testing-plan.md Phase 0.",
+  "flags": {}
+}

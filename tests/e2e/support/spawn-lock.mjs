@@ -50,7 +50,17 @@ export function acquireSpawnMutex() {
     try {
       mkdirSync(MUTEX_PATH);
       writeFileSync(PID_FILE, String(process.pid), 'utf8');
-      process.once('exit', () => rmSync(MUTEX_PATH, { recursive: true, force: true }));
+      // OWNERSHIP-checked release (review 3): if this run's lock was purged as stale while it
+      // was still alive (operator followed the error's delete-manually hint mid-run), releasing
+      // unconditionally here would delete the NEW owner's mutex and open a double-boot window.
+      process.once('exit', () => {
+        try {
+          if (readFileSync(PID_FILE, 'utf8') === String(process.pid))
+            rmSync(MUTEX_PATH, { recursive: true, force: true });
+        } catch {
+          /* lock already gone or unreadable: not ours to release */
+        }
+      });
       return;
     } catch (err) {
       if (err.code !== 'EEXIST') throw err;

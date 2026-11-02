@@ -86,4 +86,48 @@ describe('recorded knight attack fixture = standard knight message contract', ()
     expect(b.flags.knight.weapon.effets.raw).toEqual(['percearmure 40', 'penetrant 6']);
     expect(standardKnightMessageFixture().flags.knight.weapon.effets.raw).toEqual(['percearmure 40', 'penetrant 6']);
   });
+
+  it('serialized dice pools match the plan PIP-BY-PIP (value pin alone would not prove determinism)', () => {
+    // Review 3: an exploit re-roll (same 3D6 formula) could hijack the dice queue and leave the
+    // damage pool genuinely random — ~4.6% of random 3d6 sums equal 12 and would satisfy the
+    // value pin. Mirror of the recorder's gate, now CI-enforced on the committed fixture:
+    // exactly ONE pool per phase, plan die shape, and the override extension's exact
+    // base/remainder pip split (dice-override/content.js:45-51).
+    const planPips = (plan) => {
+      const base = Math.floor(plan.total / plan.count);
+      return Array.from(
+        { length: plan.count },
+        (_, i) => base + (i === plan.count - 1 ? plan.total - base * plan.count : 0),
+      );
+    };
+    const cases = [
+      ['damage rolls', fixture.rolls, RECORDED_FIXTURE_META.dicePlan.damage],
+      ['flags.knight.attaque', fixture.flags.knight.attaque, RECORDED_FIXTURE_META.dicePlan.attack],
+    ];
+    for (const [label, entries, plan] of cases) {
+      expect(entries, label).toHaveLength(1);
+      // v14: ChatMessage.rolls are serialized JSON strings; flags.knight.attaque holds live objects.
+      const roll = typeof entries[0] === 'string' ? JSON.parse(entries[0]) : entries[0];
+      const dice = (roll.terms ?? []).filter((t) => t.class === 'Die');
+      expect(dice, `${label}: exactly one Die term`).toHaveLength(1);
+      expect(dice[0].faces, label).toBe(plan.faces);
+      expect(dice[0].number, label).toBe(plan.count);
+      expect(
+        dice[0].results.filter((r) => r.active === true).map((r) => r.result),
+        label,
+      ).toEqual(planPips(plan));
+      expect(roll.total, label).toBe(plan.total);
+    }
+  });
+
+  it('content carries the module DOM anchors its injection depends on', () => {
+    // The unit doubles answer by canned SELECTOR, not DOM, so a knight-system change to the
+    // real message shape (e.g. the .knight-roll append anchor at knight-damage.js:261) would
+    // keep the unit suite green and only surface in local-only e2e — pin the anchors here so
+    // CI catches that class of drift. (Recording a trait-bearing weapon so the label/value
+    // span path is exercised against REAL system HTML is a Phase-3 prerequisite: the standard
+    // weapon's percearmure/penetrant render label-only spans, no value span.)
+    expect(fixture.content).toContain('class="knight-roll"');
+    expect(fixture.content.match(/class="label/g)).not.toBeNull();
+  });
 });
