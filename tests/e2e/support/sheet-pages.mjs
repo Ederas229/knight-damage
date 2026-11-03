@@ -80,11 +80,23 @@ export const snapshotItemFlagsInPage = (actorId, itemId) =>
  * the snapshot CANNOT remove keys the current data has but the baseline never had — and the knight
  * sheet's close-SUBMIT re-submits the WHOLE rendered form, which materialises empty form fields as
  * stored nulls (live hs1 proof: `system.sante.bonus.user: <absent> -> null` surviving every
- * merge-restore, caught only by the byte self-check). This walks the CURRENT stored subtree
- * (`JSON.parse(JSON.stringify(actor.system))`, byte-identical channel to snapshotActorSystemInPage,
- * so prepared getters never masquerade as deletable rows), turns every baseline-absent key into
- * Foundry's
- * null deletion marker, and merges the result over the snapshot in one update.
+ * merge-restore, caught only by the byte self-check). v14.369 REAL deletion semantics (core source,
+ * byte-checked in the portable/Node install): a nested {k: null} payload is a SET to null —
+ * mergeObject deletes ONLY via ForcedDeletion operators (helpers.mjs:1206-1211) and diffObject
+ * emits deletion markers only with bidirectional:true, which _updateDiff never requests
+ * (fields.mjs:1973-2003 diff path, helpers.mjs:312,350-354). The honored lever is the legacy
+ * forced-deletion SIBLING key `{['-=' + k]: null}` — converted to a real
+ * foundry.data.operators.ForcedDeletion by SchemaField#_cleanKeys (fields.mjs:1118-1128) and
+ * ObjectField#_cleanType (fields.mjs:1924-1932), which ObjectField#_updateDiff then applies through
+ * mergeObject({applyOperators:true}) (fields.mjs:1988-1990). So this walks the CURRENT stored
+ * subtree (`JSON.parse(JSON.stringify(actor.system))`, byte-identical channel to
+ * snapshotActorSystemInPage, so prepared getters never masquerade as deletable rows), emits one
+ * `-=` sibling marker (null-valued, opaque leaf — never recursed into) for every baseline-absent
+ * key, and merges the markers over the snapshot in one update. Baseline-present keys keep the
+ * plain value-restore (the snapshot row simply overwrites). The payload's first flattened key is
+ * reported back: it must stay OUTSIDE system.armure/system.energie or the knight.mjs:848 first-key
+ * mirror could fire mid-restore — the snapshot's key order is preserved and markers only APPEND at
+ * their own level, so the first flat key is the snapshot's own first leaf (live dump: system.version).
  */
 export const restoreActorSystemExactInPage = (actorId, snapshot) => {
   const actor = game.actors.get(actorId);
@@ -92,8 +104,10 @@ export const restoreActorSystemExactInPage = (actorId, snapshot) => {
   const prune = (cur, base) => {
     const out = {};
     for (const [k, v] of Object.entries(cur ?? {})) {
+      if (k.startsWith('-=')) continue; // operator sibling, never a data row in a stored subtree
       const b = base ? base[k] : undefined;
-      if (b === undefined) out[k] = null;
+      if (b === undefined)
+        out['-=' + k] = null; // forced-deletion marker (null-valued leaf)
       else if (isObj(v) && isObj(b)) {
         const inner = prune(v, b);
         if (Object.keys(inner).length) out[k] = inner;
@@ -104,14 +118,27 @@ export const restoreActorSystemExactInPage = (actorId, snapshot) => {
   const deep = (a, b) => {
     const out = { ...a };
     for (const [k, v] of Object.entries(b)) {
-      out[k] = isObj(v) && isObj(out[k]) ? deep(out[k], v) : v;
+      if (k.startsWith('-='))
+        out[k] = v; // opaque operator leaf: NEVER recursed into
+      else out[k] = isObj(v) && isObj(out[k]) ? deep(out[k], v) : v;
     }
     return out;
+  };
+  const firstFlatKey = (obj, prefix = '') => {
+    for (const [k, v] of Object.entries(obj)) {
+      const p = prefix ? `${prefix}${k}` : k;
+      if (!isObj(v)) return p;
+      const inner = firstFlatKey(v, `${p}.`);
+      if (inner !== null) return inner;
+    }
+    return null;
   };
   const current = JSON.parse(JSON.stringify(actor.system));
   const deletions = prune(current, snapshot);
   const n = Object.keys(deletions).length;
-  return actor.update({ system: n ? deep(snapshot, deletions) : snapshot }).then(() => ({ deleted: n }));
+  const system = n ? deep(snapshot, deletions) : snapshot;
+  const firstFlat = firstFlatKey({ system });
+  return actor.update({ system }).then(() => ({ deleted: n, firstFlat }));
 };
 
 /** Page-function: merge-partial update of an embedded item ({'system.generation': 3} etc). */

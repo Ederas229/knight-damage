@@ -54,9 +54,11 @@
 //     is #sanitizeValue-clamped to 15 there too). The PRE-OPENED sheet's .armure[data-type=armure]
 //     click flips wear back to armure; the guardian-leaf EXIT-WRITE LANDS (90 -> the click-time
 //     PREPARED armure.value) while the enter-'armure' pull armor.system.armure.value is the
-//     ITEM's schema-ABSENT leaf -> undefined -> v14-dropped, so the switch NEVER re-sets the
-//     stored armure gauge from the ITEM. The +100ms re-read (post-switch prepared 70 = the leaf
-//     mirror of apply's own write) + the recap then land STORED armure 70+30=100 (NOT 130),
+//     ITEM's schema-ABSENT leaf (key absent on BOTH sides), so the switch NEVER feeds an
+//     ITEM-derived value into the stored gauge. The TIMER ordering -- the +1 ms click switch is
+//     live before the +100 ms re-read fires (nothing is awaited at knight-sheet.mjs:319 /
+//     damageKnight.js:201; pinned live by the waited end state) -- leaves stored armure 70, and
+//     the re-read + the recap land STORED armure 70+30=100 (observed finals exclude 130),
 //     sante 20 both sides, CdF back to the ITEM's 10.
 //  D  loup module-sheet DOM half (the unit suite pins the flag-contract half): a FRESH module
 //     item defaults system.active.base = false; renderModuleSheet creates the knight-damage.loup
@@ -96,9 +98,15 @@
 //   - every case snapshots the victim system + knight-damage flags + the armor ITEM's system
 //     subtree + effect statuses + item inventory, and cleanup closes every *Sheet* window,
 //     releases tokens, deletes its own chat messages / effects / items, restores
-//     system+flags+ITEM subtree, then WAITS the SEED stats (incl. wear re-pinned to armure and
-//     the gen-4 ITEM mirror back to jauges.sante=false) before the next case -- back-to-back runs
-//     WITHOUT setup:e2e are valid;
+//     system+flags+ITEM subtree -- the actor system via restoreActorSystemExactInPage, whose
+//     -= forced-deletion markers remove the baseline-absent keys a sheet close-SUBMIT
+//     re-materialises (plain nulls only SET at v14, so a null-marker restore CANNOT delete;
+//     review round 2 fixed exactly this), then WAITS the SEED stats (incl. wear re-pinned to
+//     armure and the gen-4 ITEM mirror back to jauges.sante=false) before the next case --
+//     back-to-back runs WITHOUT setup:e2e are valid ONCE the data dir's baseline is pristine:
+//     before the review-2 fix + re-seed the leaked null was BAKED into test-data/, so the
+//     byte self-check was comparing the leak against itself; the re-seeded baseline now
+//     converges back to pristine every run;
 //   - case ORDER is deliberate: A runs FIRST (cold first-render truth), every later case
 //     pre-opens its sheets or needs no sheet at all;
 //   - recap cards are sunk (deleted) AT discovery; the suite-end self-checks (four actors' system
@@ -441,9 +449,26 @@ async function main(Framework) {
     await fw
       .executeInFoundry(restoreItemSystemInPage, VIC_ACTOR_ID, ARMOR_ITEM_ID, baseline.itemSystem)
       .catch((err) => console.log(`[hooks] cleanup ITEM-restore FAILED: ${err.message ?? err}`));
-    await fw
+    const exact = await fw
       .executeInFoundry(restoreActorSystemExactInPage, VIC_ACTOR_ID, baseline.system)
-      .catch((err) => console.log(`[hooks] cleanup actor-restore FAILED: ${err.message ?? err}`));
+      .then((r) => r ?? { deleted: -1 })
+      .catch((err) => {
+        console.log(`[hooks] cleanup actor-restore FAILED: ${err.message ?? err}`);
+        return { deleted: -1 };
+      });
+    console.log(
+      `[hooks] cleanup exact-restore: ${JSON.stringify(exact)} (firstFlat must stay OUTSIDE system.armure/system.energie)`,
+    );
+    // Proof that the -= operator marker deletion landed: the sheet close-SUBMIT's materialised
+    // system.sante.bonus.user null must be GONE from the stored (_source) side right after the
+    // restore (absent -> absent; a plain-null restore would leave user: null here instead).
+    const postBonus = await fw
+      .executeInFoundry((aid) => {
+        const bonus = game.actors.get(aid)?._source?.system?.sante?.bonus;
+        return { bonus: bonus === undefined ? null : JSON.parse(JSON.stringify(bonus)) };
+      }, VIC_ACTOR_ID)
+      .catch(() => null);
+    console.log(`[hooks] cleanup post-restore _source sante.bonus: ${JSON.stringify(postBonus)}`);
     await fw
       .executeInFoundry(restoreModuleFlagsInPage, VIC_ACTOR_ID, baseline.flags)
       .catch((err) => console.log(`[hooks] cleanup flag-restore FAILED: ${err.message ?? err}`));
@@ -951,17 +976,21 @@ async function main(Framework) {
         );
       }
 
-      // Two candidate orderings for the +100ms stat-restore read (pinned by the waited predicate):
-      //  (a) the +1ms click's update lands FIRST (case C already proved the click update beats the
-      //      +100ms read on a PRE-OPENED sheet): setActorStats re-reads the POST-switch prepared
-      //      armure. Entering 'armure' the handler pulls armor.system.armure.value -- which does
-      //      NOT EXIST on a v14 armure ITEM -- so the key is undefined-dropped by the update merge
-      //      and the stored gauge keeps 70 while prepared re-derives min(leaf 70, ITEM max 100)
+      // Two candidate TIMER orderings for the +100ms stat-restore read -- nothing is awaited at
+      // knight-sheet.mjs:319 / damageKnight.js:201, so the choice is pinned live by the waited
+      // end-state predicate:
+      //  (a) the +1ms click's switch is live BEFORE the +100ms read fires (case C pinned the same
+      //      timer ordering on a PRE-OPENED sheet): setActorStats re-reads the POST-switch prepared
+      //      armure. Entering 'armure' the handler pulls armor.system.armure.value -- a leaf the
+      //      v14 armure ITEM schema does not define (the key is absent on BOTH sides) -- so the
+      //      switch never feeds an ITEM-derived value into the stored gauge (merge-drop vs
+      //      field-initial substitution is unobservable from outside); the stored gauge keeps the
+      //      apply-mirror 70 while prepared re-derives min(leaf 70, ITEM max 100)
       //      = 70 -> 70+30 = 100 STORED.
       //  (b) the +100ms read wins the race: prepared is still the guardian-clamped 15 -> 15+30 =
       //      45 (exactly case C's byte shape).
-      // The live truth is (a); the exact-100-vs-130 question never even arises because the ITEM
-      // pull can never re-set the stored gauge to 100 (there IS no ITEM armure.value leaf).
+      // The live truth is (a); observed finals exclude 130 anyway because the ITEM pull can never
+      // re-set the stored gauge (there IS no ITEM armure.value leaf).
       await fw.executeInFoundry(controlTokenInPage, VIC_TOKEN_ID);
       await fw.waitFor(clickOnMessageCard, 15000, recap.id, 'button.revert-damage');
       const reverted = await waitForStats(
@@ -983,7 +1012,7 @@ async function main(Framework) {
       console.log(`[hooks] PROBE C2 post-revert ITEM paths: ${JSON.stringify(itemPaths)}`);
       await dumpActorUpdates('C2');
       push(
-        "casC2: revert (flag wear armure natif contre porteur guardian) : la branche damageKnight.js:200 declenche switchArmure('armure') qui TOMBE sur la feuille PRE-OUVERTE ; CONTRASTES D'ECRITURE : (a) l'exit-write de la FEUILLE guardian est OBSERVABLE dans le stocke : 90 -> 15 = la valeur armure PREPAREE au moment du click (le handler du sheet ne lit que les rangees preparees, jamais _source), (b) le PULL d'entree armure armor.system.armure.value est la feuille ABSENTE du schema ITEM -> undefined -> cle DESCARTEE par le merge : le switch ne re-ecrit JAMAIS le gauge stocke depuis l'ITEM (base intacte 100, cle absente des DEUX cotes) ; puis le recap restaure PAR-DESSUS le re-lecture +100ms POST-switch (ordering (a)) : STORED armure 70+30 = 100 (PAS 130), prepare 100 = min(feuille miroir re-ecrite 100, max ITEM 100), sante 14+6=20 des DEUX cotes, CdF prepare 10 (base ITEM sous wear armure), wear armure des deux cotes",
+        "casC2: revert (flag wear armure natif contre porteur guardian) : la branche damageKnight.js:200 declenche switchArmure('armure') qui TOMBE sur la feuille PRE-OUVERTE ; CONTRASTES D'ECRITURE : (a) l'exit-write de la FEUILLE guardian est OBSERVABLE dans le stocke : 90 -> 15 = la valeur armure PREPAREE au moment du click (le handler du sheet ne lit que les rangees preparees, jamais _source), (b) le PULL d'entree armure armor.system.armure.value est la feuille ABSENTE du schema ITEM : le switch ne nourrit JAMAIS le gauge stocke avec une valeur derivee de l'ITEM (finals observes exclus 130 ; base intacte 100, cle absente des DEUX cotes ; drop par le merge vs substitution par l'initial 0 du champ : non observables de l'exterieur) ; puis le recap restaure PAR-DESSUS la re-lecture +100ms EFFECTUEE APRES le basculement (ordering TEMPORISEL (a) epingle live : le click du switch tombe AVANT la re-lecture, rien n'est attendu cote systeme ni module) : STORED armure 70+30 = 100 (PAS 130), prepare 100 = min(feuille miroir re-ecrite 100, max ITEM 100), sante 14+6=20 des DEUX cotes, CdF prepare 10 (base ITEM sous wear armure), wear armure des deux cotes",
         reverted.wear === 'armure' &&
           sides.prepared.wear === 'armure' &&
           sides.source['system.wear'] === 'armure' &&
