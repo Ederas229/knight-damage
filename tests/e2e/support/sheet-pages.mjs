@@ -11,21 +11,6 @@
 // ── Application windows (v1 registry) ──
 
 /**
- * Page-function: one-shot inventory of EVERY open application window — v1 popouts live in
- * ui.windows (appv1/api/application-v1.mjs:415) while ApplicationV2 instances live in the
- * foundry.applications.instances MAP (see damage-knight's closeStuckDialogs comment). Returned as
- * PLAIN {id, className, title} rows (Document objects never cross the CDP boundary).
- */
-export const openWindowsInPage = () => {
-  const rows = [];
-  for (const w of Object.values(ui.windows ?? {}))
-    rows.push({ id: w.appId ?? null, className: w.constructor?.name ?? '?', title: String(w.title ?? '') });
-  for (const w of Array.from(foundry.applications?.instances?.values() ?? []))
-    rows.push({ id: w.appId ?? null, className: w.constructor?.name ?? '?', title: String(w.title ?? '') });
-  return { windows: rows };
-};
-
-/**
  * Page-function WAIT predicate: null while ANY open window's className OR title matches the
  * (string-delivered) regex source+flags — the sheet-left-open negative pin, and the suite-end
  * "no window leaked" self-check. Pattern arrives as SOURCE TEXT because page functions cannot
@@ -89,6 +74,45 @@ export const snapshotItemSystemInPage = (actorId, itemId) =>
 /** Page-function: deep-copy an embedded item's knight-damage flag namespace (absent = {}). */
 export const snapshotItemFlagsInPage = (actorId, itemId) =>
   JSON.parse(JSON.stringify(game.actors.get(actorId).items.get(itemId).flags?.['knight-damage'] ?? {}));
+
+/**
+ * Page-function: BYTE-EXACT restore of an actor's stored system subtree. A plain merge update of
+ * the snapshot CANNOT remove keys the current data has but the baseline never had — and the knight
+ * sheet's close-SUBMIT re-submits the WHOLE rendered form, which materialises empty form fields as
+ * stored nulls (live hs1 proof: `system.sante.bonus.user: <absent> -> null` surviving every
+ * merge-restore, caught only by the byte self-check). This walks the CURRENT stored subtree
+ * (`JSON.parse(JSON.stringify(actor.system))`, byte-identical channel to snapshotActorSystemInPage,
+ * so prepared getters never masquerade as deletable rows), turns every baseline-absent key into
+ * Foundry's
+ * null deletion marker, and merges the result over the snapshot in one update.
+ */
+export const restoreActorSystemExactInPage = (actorId, snapshot) => {
+  const actor = game.actors.get(actorId);
+  const isObj = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);
+  const prune = (cur, base) => {
+    const out = {};
+    for (const [k, v] of Object.entries(cur ?? {})) {
+      const b = base ? base[k] : undefined;
+      if (b === undefined) out[k] = null;
+      else if (isObj(v) && isObj(b)) {
+        const inner = prune(v, b);
+        if (Object.keys(inner).length) out[k] = inner;
+      }
+    }
+    return out;
+  };
+  const deep = (a, b) => {
+    const out = { ...a };
+    for (const [k, v] of Object.entries(b)) {
+      out[k] = isObj(v) && isObj(out[k]) ? deep(out[k], v) : v;
+    }
+    return out;
+  };
+  const current = JSON.parse(JSON.stringify(actor.system));
+  const deletions = prune(current, snapshot);
+  const n = Object.keys(deletions).length;
+  return actor.update({ system: n ? deep(snapshot, deletions) : snapshot }).then(() => ({ deleted: n }));
+};
 
 /** Page-function: merge-partial update of an embedded item ({'system.generation': 3} etc). */
 export const updateItemInPage = (actorId, itemId, data) =>
@@ -300,6 +324,8 @@ export const readHookErrorsInPage = () => window.__kdtHookErrors ?? [];
  * Page-function: record EVERY renderModuleSheet pass as one row (the module's own hook registers at
  * init — i.e. BEFORE this recorder, so a row reflects what the module hook already did to `html`:
  * first pass = flag-map creation + early return (no buttons), later passes = the injected map).
+ * Each row carries the rendered item's OWN id so consumers can filter their item's passes instead
+ * of indexing the boot-global array positionally.
  */
 export const installModuleSheetRenderRecorderInPage = () => {
   if (window.__kdtModuleSheetPasses) return 'already installed';
@@ -308,6 +334,7 @@ export const installModuleSheetRenderRecorderInPage = () => {
     if (window.__kdtModuleSheetPasses.length >= 20) return;
     const $html = $(html);
     window.__kdtModuleSheetPasses.push({
+      id: app.object?.id ?? null,
       name: app.object?.name ?? null,
       hasFlag: app.object?.flags?.['knight-damage']?.loup !== undefined,
       niveauN1: $html?.find?.('.niveau_n1')?.length ?? -1,
@@ -317,8 +344,15 @@ export const installModuleSheetRenderRecorderInPage = () => {
   return 'installed';
 };
 
-/** Page-function: read the accumulated renderModuleSheet passes. */
-export const readModuleSheetPassesInPage = () => window.__kdtModuleSheetPasses ?? [];
+/**
+ * Page-function WAIT predicate: null until the recorder holds at least `min` renderModuleSheet
+ * passes for the delivered ITEM id — then {rows} (the item's own passes, in order). The fixed
+ * boot-position read + blind sleep this replaces could never tell WHICH sheet produced a row.
+ */
+export const readModuleSheetPassesInPage = (itemId, min) => {
+  const rows = (window.__kdtModuleSheetPasses ?? []).filter((p) => p.id === itemId);
+  return rows.length >= min ? { rows } : null;
+};
 
 /**
  * Page-function: is the loup BUTTON for optionKey rendered in the item-sheet DOM yet? null until

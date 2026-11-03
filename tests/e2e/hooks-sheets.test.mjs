@@ -45,6 +45,19 @@
 //     15 via the system handler) and adds the recap back on top: armure 15+30=45, sante 14+6=20,
 //     wear guardian BOTH sides; revert's own apply() gate (armure now 45 != 0) never re-fires.
 //     The leave-armure ITEM write is again schema-DROPPED (ITEM byte-intact).
+//  C2 the SYMMETRIC twin of C -- the damageKnight.js:200 branch (recap wear 'armure' vs a live
+//     GUARDIAN-wearer, recap flag NATIF, no re-stamp): apply(34) -> recap {armure:30, sante:6},
+//     then the live actor is mutated to {'system.equipements.guardian.armure.value': 90,
+//     'system.wear': 'guardian'}. LIVE TRUTH: the 90 leaf write LANDS on _source, but prepared
+//     armure.value only ever re-derives as min(leaf, max) with the guardian base 15 as max
+//     (knight-data-model #base/#derived) -- the 90 is INVISIBLE in prepared reads (the leaf itself
+//     is #sanitizeValue-clamped to 15 there too). The PRE-OPENED sheet's .armure[data-type=armure]
+//     click flips wear back to armure; the guardian-leaf EXIT-WRITE LANDS (90 -> the click-time
+//     PREPARED armure.value) while the enter-'armure' pull armor.system.armure.value is the
+//     ITEM's schema-ABSENT leaf -> undefined -> v14-dropped, so the switch NEVER re-sets the
+//     stored armure gauge from the ITEM. The +100ms re-read (post-switch prepared 70 = the leaf
+//     mirror of apply's own write) + the recap then land STORED armure 70+30=100 (NOT 130),
+//     sante 20 both sides, CdF back to the ITEM's 10.
 //  D  loup module-sheet DOM half (the unit suite pins the flag-contract half): a FRESH module
 //     item defaults system.active.base = false; renderModuleSheet creates the knight-damage.loup
 //     8-key 'unactive' map on the FIRST pass (pass1: no flag, 0 buttons, DOM untouched) and the
@@ -109,11 +122,11 @@ import {
   installActorUpdateCounterInPage,
   readActorUpdatesInPage,
   releaseAllTokensInPage,
-  restoreActorSystemInPage,
   restoreModuleFlagsInPage,
   snapshotActorSystemInPage,
   snapshotActorsModuleFlagsInPage,
   snapshotModuleFlagsInPage,
+  updateActorInPage,
 } from './support/actor-pages.mjs';
 import {
   closeWindowsMatchingInPage,
@@ -136,6 +149,7 @@ import {
   readItemPathsInPage,
   readModuleSheetPassesInPage,
   readPreparedAndSourceInPage,
+  restoreActorSystemExactInPage,
   restoreItemSystemInPage,
   setItemFlagInPage,
   sheetRenderedInPage,
@@ -189,7 +203,9 @@ const SEED_STATS = {
 //     {armure:100, sante:20} + both lines printed; apply()'s ==0 gate fires.
 //   target 34: damage 30 -> armure 70, carry trunc(30/5)=6 -> sante 14. recap EXACT {armure:30,
 //     sante:6}. C revert on top of the guardian switch (system.armure.value := stored 15 FIRST):
-//     armure 15+30=45, sante 14+6=20.
+//     armure 15+30=45, sante 14+6=20. C2 revert on top of the switch BACK to armure (the enter
+//     pull is the ITEM's schema-ABSENT armure.value -> the stored gauge keeps the apply-mirror
+//     70): armure 70+30=100, sante 14+6=20.
 //   target 14 + full-bypass weapon (E pair): bypass stands -> CdF ignored, armure skipped ->
 //     recap {armure:0, sante:14}, sante 6; loup-neutralised -> CdF 10 bites, armor absorbs 4 ->
 //     recap {armure:4, sante:0}, armure 96.
@@ -325,8 +341,9 @@ async function main(Framework) {
   }
 
   // THE guardian-switch lever: the armor ITEM generation=3 + stored jauges.sante=true. (gen 4
-  // defineProperty-kills the leaf every prepare AND re-forces the actor wear pin; the actor-level
-  // system.jauges write is NOT the lever -- #setJauges MIRRORS the ITEM under wear 'armure'.)
+  // defineProperty-kills every write-back to the ITEM's OWN prepared jauges leaf AND re-forces
+  // the actor wear pin -- prepare NEVER touches the equipements leaves; the actor-level
+  // system.jauges write is NOT the lever either -- #setJauges MIRRORS the ITEM under wear 'armure'.)
   // WAITED on ITEM gen + ITEM jauges + ACTOR mirror.
   async function setGuardianLever(on) {
     await fw.executeInFoundry(
@@ -364,9 +381,12 @@ async function main(Framework) {
   }
 
   // The A-mechanism discriminator: EVERY victim preUpdateActor payload since boot (apply's own
-  // writes AND the knight system's unawaited equipements-leaf mirror, knight.mjs:848-858). hs2 saw
-  // the prepared armure bounce 0 -> 100 after the exact-0 apply under the gen-4 seed while hs1 saw
-  // 0 stick -- the payload ORDER/KEYS decide whether the mirror or the gen-4 ITEM re-pin won.
+  // writes AND the knight system's unawaited equipements-leaf mirror, knight.mjs:848-858, gated
+  // on the FIRST flattened key being system.armure.value / system.energie.value). Prepared
+  // armure.value only ever reads the LEAF through the min(leaf, max) clamp, so live runs disagree
+  // (leaf-0 sticking vs the prepared row re-masked to 100) purely on whether that mirror write
+  // landed and whether the module-opened sheet's close-SUBMIT re-submitted the leaf from the
+  // freshly rendered form -- prepare itself NEVER re-pins any leaf.
   async function dumpActorUpdates(tag, victimOnly = true) {
     const updates = await fw.executeInFoundry(readActorUpdatesInPage);
     const vic = victimOnly ? updates.filter((u) => u.id === VIC_ACTOR_ID) : updates;
@@ -422,7 +442,7 @@ async function main(Framework) {
       .executeInFoundry(restoreItemSystemInPage, VIC_ACTOR_ID, ARMOR_ITEM_ID, baseline.itemSystem)
       .catch((err) => console.log(`[hooks] cleanup ITEM-restore FAILED: ${err.message ?? err}`));
     await fw
-      .executeInFoundry(restoreActorSystemInPage, VIC_ACTOR_ID, baseline.system)
+      .executeInFoundry(restoreActorSystemExactInPage, VIC_ACTOR_ID, baseline.system)
       .catch((err) => console.log(`[hooks] cleanup actor-restore FAILED: ${err.message ?? err}`));
     await fw
       .executeInFoundry(restoreModuleFlagsInPage, VIC_ACTOR_ID, baseline.flags)
@@ -546,11 +566,17 @@ async function main(Framework) {
 
       const msg = await replay(mutateTarget(104), victimSpeaker);
       ctx.msgIds.push(msg);
-      // The armure leaf is DELIBERATELY absent from the waited stats: under the gen-4 seed the
-      // knight model re-pins the equipements.armure leaf from the ITEM base 100 at every prepare
-      // (the exact-0 write is the ONE damage outcome that erases itself), while sante/cdf/wear
-      // writes stick. hs2 live proof: actual {armure:100, sante:0}. The stored-vs-prepared truth
-      // is decided by the sides probe + the preUpdateActor payload dump below.
+      // The armure leaf is DELIBERATELY absent from the waited stats. TRUE MECHANISM (oracle-
+      // verified, not the old "the model re-pins the leaf from the ITEM base at every prepare"
+      // story -- prepare NEVER writes the equipements leaf): the exact-0 write lands on the
+      // STORED system.armure.value gauge, while every PREPARED read of armure.value re-derives
+      // as min(equipements.armure.armure.value, max) (knight-data-model.mjs:1195-1201) -- it
+      // only ever reflects the LEAF, never the stored gauge write. The leaf moves ONLY via the
+      // un-awaited knight.mjs:848 mirror (first-flat-key system.armure.value / energie.value)
+      // or the sheet close-SUBMIT's form field -- so while neither mover has run, prepared
+      // stays 100 over a stored 0. hs live proof: actual {armure:100, sante:0} with
+      // _source.system.armure.value 0. The stored-vs-prepared truth is decided by the sides
+      // probe + the preUpdateActor payload dump below.
       const { recap, stats } = await applyDamageAndAwait(
         msg,
         'applyDamage',
@@ -594,11 +620,13 @@ async function main(Framework) {
       console.log(`[hooks] PROBE A stored-vs-prepared after exact-0 apply: ${JSON.stringify(sides)}`);
       await dumpActorUpdates('A');
       push(
-        "casA: etat final exact-0 cote RACE : sante 0 des DEUX cotes (partout persiste), armure stockee+preparee dans [0,100] (live hs3 : 0/0 -- la re-soumission du formulaire a la fermeture a elle aussi ecrit la feuille a 0 ; le 100 d'une ancienne inter-rotation venait d'une ecriture derivee complete) -- le dump preUpdateActor epingle la CHAINE complete apply x2 -> miroir equipements x2 -> SUBMIT DE CLOTURE du sheet ouvert par le module",
+        "casA: etat final exact-0 cote RACE : sante 0 des DEUX cotes (partout persiste), armure stockee+preparee dans [0,100] (live hs3 : 0/0 -- la re-soumission du formulaire a la fermeture a elle aussi ecrit la feuille a 0 ; le 100 masque d'une ancienne inter-rotation venait du SUBMIT de cloture re-ecrivant la FEUILLE depuis le formulaire fraichement rendu, jamais d'un re-pin par le prepare) -- le dump preUpdateActor est un LOG DIAGNOSTIQUE (NON epingle) de la chaine apply x2 -> miroir equipements x2 -> SUBMIT DE CLOTURE eventuel du sheet ouvert par le module",
         sides.prepared['sante.value'] === 0 &&
           sides.source['system.sante.value'] === 0 &&
+          typeof sides.prepared['armure.value'] === 'number' &&
           sides.prepared['armure.value'] >= 0 &&
           sides.prepared['armure.value'] <= 100 &&
+          typeof sides.source['system.armure.value'] === 'number' &&
           sides.source['system.armure.value'] >= 0 &&
           sides.source['system.armure.value'] <= 100,
       );
@@ -842,6 +870,135 @@ async function main(Framework) {
       );
     });
 
+    // ══════════════ case C2: revert against a GUARDIAN-wearer (C's twin) ══════════════
+    await runCase('caseC2-revert-guardian-wearer', async (ctx) => {
+      console.log('=== hooks-sheets: C2 revert (flag wear armure NATIF) contre porteur GUARDIAN : feuille vs ITEM ===');
+      await setGuardianLever(true); // gen-3 lever: the ONLY way the wear mutation survives prepare
+      const msg = await replay(mutateTarget(34), victimSpeaker);
+      ctx.msgIds.push(msg);
+      const { recap, stats } = await applyDamageAndAwait(
+        msg,
+        'applyDamage',
+        { armure: 70, sante: 14 },
+        ctx.msgIds,
+        'C2-34',
+      );
+      push(
+        'casC2: application 34 (direction symetrique du cas C, AUCUNE re-apposition de flag : le recap porte le wear armure NATIF du porteur) : recap EXACT {armure:30, sante:6}, armure 70 / sante 14, AUCUN basculement (porte armure==0 non satisfaite), flag wear du recap = armure',
+        JSON.stringify(recap.recap) === JSON.stringify({ armure: 30, sante: 6 }) &&
+          JSON.stringify({ armure: stats.armure, sante: stats.sante }) === JSON.stringify({ armure: 70, sante: 14 }) &&
+          recap.flags.wear === 'armure',
+      );
+
+      // Flip the LIVE actor into a guardian-wearer carrying a fat 90 guardian leaf (the whole
+      // mutation is inside the case baseline, snapshot-restored). Both keys are actor-schema-declared.
+      await fw.executeInFoundry(updateActorInPage, VIC_ACTOR_ID, {
+        'system.equipements.guardian.armure.value': 90,
+        'system.wear': 'guardian',
+      });
+      // WAIT on the STORED side (the prepared armure row is base-clamped to 15 under guardian and
+      // can NEVER observe the 90 -- see the probe below), then the settled prepared shape.
+      await fw.waitFor(
+        (aid) => {
+          const src = game.actors.get(aid)?._source?.system;
+          if (src?.wear !== 'guardian') return null;
+          if (src?.equipements?.guardian?.armure?.value !== 90) return null;
+          return { storedLeaf: 90, storedWear: 'guardian' };
+        },
+        15000,
+        VIC_ACTOR_ID,
+      );
+      await waitForStats({ wear: 'guardian', armure: 15, sante: 14, cdf: 5, jaugesSante: true }, 'C2-mutate');
+      const midSides = await fw.executeInFoundry(
+        readPreparedAndSourceInPage,
+        VIC_ACTOR_ID,
+        ['wear', 'armure.value', 'equipements.guardian.armure.value'],
+        [
+          'system.wear',
+          'system.armure.value',
+          'system.equipements.guardian.armure.value',
+          'system.equipements.armure.armure.value',
+        ],
+      );
+      console.log(`[hooks] PROBE C2 guardian-90 mutation stored-vs-prepared: ${JSON.stringify(midSides)}`);
+      push(
+        "casC2: la MUTATION guardian est LUE des DEUX cotes : _source wear guardian + _source feuille guardian = 90 (le 90 EST ecrit, min schema OK) ; mais le PREPARE ne peut PAS voir 90 : armure.value = 15 et la feuille preparee elle-meme re-clampee 15 = min(90, max guardian base 15) (#base/#derived/#sanitizeValue) -- le gauge stockee system.armure.value reste 70 et la feuille armure stockee = 70 (miroir knight.mjs:848 declenche par le payload d'application, first-flat-key = system.armure.value)",
+        midSides.source['system.wear'] === 'guardian' &&
+          midSides.prepared.wear === 'guardian' &&
+          midSides.source['system.equipements.guardian.armure.value'] === 90 &&
+          midSides.prepared['armure.value'] === 15 &&
+          midSides.prepared['equipements.guardian.armure.value'] === 15 &&
+          midSides.source['system.armure.value'] === 70 &&
+          midSides.source['system.equipements.armure.armure.value'] === 70,
+      );
+
+      // PRE-OPENED sheet = the deterministic-positive pattern (A2). The .armure[data-type=armure]
+      // button renders whenever the armor ITEM exists (knight-sheet.html:69-77) -- the
+      // jauges.sante gate only guards the guardian/civil buttons (:90-94).
+      await openVicSheet();
+      const btnProbe = await fw.executeInFoundry((aid) => {
+        const sheet = game.actors.get(aid)?.sheet;
+        const root = sheet?.rendered ? (sheet.element?.[0] ?? null) : null;
+        if (!root) return { rendered: false, armureTypeButtons: -1 };
+        return {
+          rendered: true,
+          armureTypeButtons: root.querySelectorAll('div.buttonSelectArmure button.armure[data-type="armure"]').length,
+        };
+      }, VIC_ACTOR_ID);
+      if (btnProbe.armureTypeButtons !== 1) {
+        throw new Error(
+          `precondition: exactly ONE .armure[data-type=armure] button required, got ${JSON.stringify(btnProbe)}`,
+        );
+      }
+
+      // Two candidate orderings for the +100ms stat-restore read (pinned by the waited predicate):
+      //  (a) the +1ms click's update lands FIRST (case C already proved the click update beats the
+      //      +100ms read on a PRE-OPENED sheet): setActorStats re-reads the POST-switch prepared
+      //      armure. Entering 'armure' the handler pulls armor.system.armure.value -- which does
+      //      NOT EXIST on a v14 armure ITEM -- so the key is undefined-dropped by the update merge
+      //      and the stored gauge keeps 70 while prepared re-derives min(leaf 70, ITEM max 100)
+      //      = 70 -> 70+30 = 100 STORED.
+      //  (b) the +100ms read wins the race: prepared is still the guardian-clamped 15 -> 15+30 =
+      //      45 (exactly case C's byte shape).
+      // The live truth is (a); the exact-100-vs-130 question never even arises because the ITEM
+      // pull can never re-set the stored gauge to 100 (there IS no ITEM armure.value leaf).
+      await fw.executeInFoundry(controlTokenInPage, VIC_TOKEN_ID);
+      await fw.waitFor(clickOnMessageCard, 15000, recap.id, 'button.revert-damage');
+      const reverted = await waitForStats(
+        { wear: 'armure', armure: 100, sante: 20, cdf: 10, jaugesSante: true },
+        'C2-revert',
+      );
+      const sides = await fw.executeInFoundry(
+        readPreparedAndSourceInPage,
+        VIC_ACTOR_ID,
+        ['wear', 'armure.value', 'sante.value', 'champDeForce.value', 'equipements.guardian.armure.value'],
+        ['system.wear', 'system.armure.value', 'system.sante.value', 'system.equipements.guardian.armure.value'],
+      );
+      const itemPaths = await fw.executeInFoundry(readItemPathsInPage, VIC_ACTOR_ID, ARMOR_ITEM_ID, [
+        'system.armure.value',
+        '_source.system.armure.value',
+        'system.armure.base',
+      ]);
+      console.log(`[hooks] PROBE C2 stored-vs-prepared after revert: ${JSON.stringify(sides)}`);
+      console.log(`[hooks] PROBE C2 post-revert ITEM paths: ${JSON.stringify(itemPaths)}`);
+      await dumpActorUpdates('C2');
+      push(
+        "casC2: revert (flag wear armure natif contre porteur guardian) : la branche damageKnight.js:200 declenche switchArmure('armure') qui TOMBE sur la feuille PRE-OUVERTE ; CONTRASTES D'ECRITURE : (a) l'exit-write de la FEUILLE guardian est OBSERVABLE dans le stocke : 90 -> 15 = la valeur armure PREPAREE au moment du click (le handler du sheet ne lit que les rangees preparees, jamais _source), (b) le PULL d'entree armure armor.system.armure.value est la feuille ABSENTE du schema ITEM -> undefined -> cle DESCARTEE par le merge : le switch ne re-ecrit JAMAIS le gauge stocke depuis l'ITEM (base intacte 100, cle absente des DEUX cotes) ; puis le recap restaure PAR-DESSUS le re-lecture +100ms POST-switch (ordering (a)) : STORED armure 70+30 = 100 (PAS 130), prepare 100 = min(feuille miroir re-ecrite 100, max ITEM 100), sante 14+6=20 des DEUX cotes, CdF prepare 10 (base ITEM sous wear armure), wear armure des deux cotes",
+        reverted.wear === 'armure' &&
+          sides.prepared.wear === 'armure' &&
+          sides.source['system.wear'] === 'armure' &&
+          sides.prepared['armure.value'] === 100 &&
+          sides.source['system.armure.value'] === 100 &&
+          sides.prepared['sante.value'] === 20 &&
+          sides.source['system.sante.value'] === 20 &&
+          sides.prepared['champDeForce.value'] === 10 &&
+          sides.source['system.equipements.guardian.armure.value'] === 15 &&
+          itemPaths['system.armure.value'] === null &&
+          itemPaths['_source.system.armure.value'] === null &&
+          itemPaths['system.armure.base'] === 100,
+      );
+    });
+
     // ══════════════ case D: loup module-sheet DOM half ══════════════
     await runCase('caseD-loup-sheet', async (ctx) => {
       console.log(
@@ -860,15 +1017,19 @@ async function main(Framework) {
 
       await fw.executeInFoundry(openItemSheetInPage, VIC_ACTOR_ID, loupId);
       await fw.waitFor(sheetRenderedInPage, 15000, 'item', VIC_ACTOR_ID, loupId);
-      await new Promise((r) => setTimeout(r, 500)); // let the flag-write auto-rerender settle
-      const passes = await fw.executeInFoundry(readModuleSheetPassesInPage);
-      console.log(`[hooks] PROBE D renderModuleSheet passes: ${JSON.stringify(passes)}`);
-      if (passes.length < 2) throw new Error(`expected >= 2 module-sheet render passes, got ${JSON.stringify(passes)}`);
+      // The flag-write auto re-render feeds the SECOND pass: WAIT (null-until-satisfied) for >= 2
+      // passes of THIS loup's own item id (recorder rows are id-stamped) instead of a fixed sleep
+      // + a positional read of the boot-global array.
+      const passesProbe = await fw.waitFor(readModuleSheetPassesInPage, 15000, loupId, 2);
+      const passes = passesProbe.rows;
+      console.log(`[hooks] PROBE D renderModuleSheet passes (loup ${loupId}): ${JSON.stringify(passes)}`);
+      if (passes.length < 2)
+        throw new Error(`expected >= 2 module-sheet render passes for ${loupId}, got ${JSON.stringify(passes)}`);
       push(
-        "casD: renderModuleSheet : passe 1 SANS flag et 0 bouton (cree la carte 8-cles unactive puis RETURN sans toucher le DOM), passe 2 (auto re-render du a l'ecriture du drapeau) AVEC le drapeau et les 8 boutons data-option reinjetes dans .niveau_n1 (le conteneur EXISTE des le schema details.n1 -> les boutons du module sont BIEN rendus live)",
+        "casD: renderModuleSheet (passes FILTRES PAR ID du loup, plus de lecture positionnelle du recorder boot-global) : passe 1 du loup SANS flag et 0 bouton (cree la carte 8-cles unactive puis RETURN sans toucher le DOM), passe 2+ (auto re-render du a l'ecriture du drapeau) AVEC le drapeau et les 8 boutons data-option reinjetes dans .niveau_n1 (le conteneur EXISTE des le schema details.n1 -> les boutons du module sont BIEN rendus live)",
         passes[0].hasFlag === false &&
           passes[0].optionButtons === 0 &&
-          passes.some((p) => p.hasFlag === true && p.optionButtons === 8 && p.niveauN1 >= 1),
+          passes.slice(1).some((p) => p.hasFlag === true && p.optionButtons === 8 && p.niveauN1 >= 1),
       );
 
       const btn = await fw.waitFor(loupButtonInPage, 15000, VIC_ACTOR_ID, loupId, 'percearmure');
@@ -961,7 +1122,7 @@ async function main(Framework) {
       // its recap+stat pins are poisoned by the leftover). The CASE baseline (snapshot taken before
       // E1) is written back whole; E never touches the armor ITEM or the gen lever, so the SEED
       // stats wait is the full gate before the neutralised replay.
-      await fw.executeInFoundry(restoreActorSystemInPage, VIC_ACTOR_ID, baseline.system);
+      await fw.executeInFoundry(restoreActorSystemExactInPage, VIC_ACTOR_ID, baseline.system);
       await waitForStats(SEED_STATS, 'E-midcase');
 
       // (ii) NEUTRALISED: the SAME weapon, but percearmure/ignorearmure/ignorecdf are 'active' ->
@@ -1038,7 +1199,10 @@ async function main(Framework) {
           `kdt-${statusId}`,
         );
         // delete BEFORE the next probe so the two +N bonuses never stack; surviving THIS long is
-        // itself the janitor contrast vs case B's swept status-less effect.
+        // itself the status-carrying half of the verified Phase-5 janitor predicate: the knight
+        // janitor deletes STATUS-LESS effects -- regardless of their changes (key-bearing or
+        // empty both qualify) -- as long as all their flags are statuscounter-flavored, while a
+        // status-CARRYING effect like this one is never janitored at all.
         await fw
           .executeInFoundry(deleteEffectsByIdsInPage, VIC_ACTOR_ID, ids)
           .catch((err) => console.log(`[hooks] F effect delete FAILED: ${err.message ?? err}`));
@@ -1049,7 +1213,7 @@ async function main(Framework) {
         return cdf?.cdf?.base === wantBase && src === 10 && survivor;
       };
       push(
-        "casF: effet a la SHAPE du module (change cle system.champDeForce.base mode 2, statut porte) : le +6 ne vit QUE dans le DERIVE (prepare champDeForce.base 10->16, feuille complete loggee) pendant que _source.system.champDeForce.base RESTE 10 -- et l'effet PORTANT statut SURVIT au janitor (contraste direct avec l'effet sans statut balaye au cas B)",
+        "casF: effet a la SHAPE du module (change cle system.champDeForce.base mode 2, statut porte) : le +6 ne vit QUE dans le DERIVE (prepare champDeForce.base 10->16, feuille complete loggee) pendant que _source.system.champDeForce.base RESTE 10 -- et l'effet PORTANT statut SURVIT au janitor du systeme (le janitor ne supprime que les effets SANS STATUT dont tous les flags sont statuscounter, quels que soient leurs changes)",
         await probeStatus('shrine', 6, 16),
       );
       push(
@@ -1066,7 +1230,7 @@ async function main(Framework) {
       if (d.length) console.log(`[hooks] DIFF system ${FOUR_IDS[i]} (boot -> end): ${d.slice(0, 40).join(' ; ')}`);
     }
     push(
-      'auto-controle empoisonnement : les systemes PREPARES des QUATRE acteurs octet-identiques aux bases du boot (toutes mutations restaurees)',
+      'auto-controle empoisonnement : les systemes STOCKES (_source, Data#toJSON) des QUATRE acteurs octet-identiques aux bases du boot (toutes mutations restaurees)',
       systemDiffs.every((d) => d.length === 0),
     );
     const endFlags = await fw.executeInFoundry(snapshotActorsModuleFlagsInPage, FOUR_IDS);
@@ -1076,9 +1240,17 @@ async function main(Framework) {
     );
     const endItemSystem = await fw.executeInFoundry(snapshotItemSystemInPage, VIC_ACTOR_ID, ARMOR_ITEM_ID);
     const endItemFlags = await fw.executeInFoundry(snapshotItemFlagsInPage, VIC_ACTOR_ID, ARMOR_ITEM_ID);
+    const itemSystemDiff = jsonDiffPaths(bootItemSystem, endItemSystem);
+    const itemFlagsDiff = jsonDiffPaths(bootItemFlags, endItemFlags);
+    if (itemSystemDiff.length)
+      console.log(
+        `[hooks] DIFF ITEM system ${ARMOR_ITEM_ID} (boot -> end): ${itemSystemDiff.slice(0, 40).join(' ; ')}`,
+      );
+    if (itemFlagsDiff.length)
+      console.log(`[hooks] DIFF ITEM flags ${ARMOR_ITEM_ID} (boot -> end): ${itemFlagsDiff.slice(0, 40).join(' ; ')}`);
     push(
-      "auto-controle empoisonnement : le systeme de l'ITEM d'armure embarque (kdtArmKnightAAAA, le porteur du pin gen-4) et ses flags knight-damage sont octet-identiques a leur base de boot (ni la cle armure.value du systeme sortant ni les leviers generation/jauges ne survivent)",
-      deepEqualJson(endItemSystem, bootItemSystem) && deepEqualJson(endItemFlags, bootItemFlags),
+      "auto-controle empoisonnement : le systeme STOCKE de l'ITEM d'armure embarque (kdtArmKnightAAAA, le porteur du pin gen-4) et ses flags knight-damage sont octet-identiques a leur base de boot (ni la cle armure.value du systeme sortant ni les leviers generation/jauges ne survivent)",
+      itemSystemDiff.length === 0 && itemFlagsDiff.length === 0,
     );
     const endEffects = await fw.executeInFoundry(snapshotEffectStatusesInPage, VIC_ACTOR_ID);
     const endInventory = await fw.executeInFoundry(readItemInventoryInPage, VIC_ACTOR_ID);

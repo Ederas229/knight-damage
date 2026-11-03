@@ -82,9 +82,12 @@ globalThis.fromUuid = async (uuid) => uuidRegistry.get(uuid) ?? null;
 
 // Hooks recorder: importing src/module/knight-damage.js executes its
 // top-level Hooks.once('init') + Hooks.on(...) registrations. The stub only
-// RECORDS the handlers (never invokes them), so CONFIG is never needed — the
-// init callback body stays unrun. Registrations are import-time and one-shot
-// per worker: resetRecorders() deliberately does NOT clear this list.
+// RECORDS the handlers (never invokes them AT IMPORT), so CONFIG is never
+// needed for the import itself — the init callback body stays unrun unless a
+// test invokes the recorded handler explicitly (the entrypoint's init-shrine
+// pin does, against a disposable CONFIG stub it installs and tears down).
+// Registrations are import-time and one-shot per worker: resetRecorders()
+// deliberately does NOT clear this list.
 const hookRegistrations = [];
 globalThis.Hooks = {
   once: (hook, fn) => hookRegistrations.push({ hook, once: true, fn }),

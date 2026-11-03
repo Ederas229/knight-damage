@@ -2,8 +2,10 @@
 // Feasibility adjudication (review-5 follow-up): importing the entrypoint under
 // the unit stubs executes ONLY its five top-level Hooks.once/Hooks.on calls —
 // the first test below pins exactly that, and the foundry-globals Hooks stub
-// records handlers without ever invoking them (the init callback body, which
-// would need CONFIG, stays unrun). Everything else in the file is function
+// records handlers without invoking them at import (the init callback body,
+// which needs CONFIG, stays unrun there; a dedicated init pin invokes the
+// recorded handler explicitly against a disposable CONFIG stub). Everything
+// else in the file is function
 // declarations. So createDamageObject and the revert-click handler ARE
 // honestly unit-reachable: the click handler is captured from the REAL
 // renderChatMessageHTML registration through the recorder's .on(), and the
@@ -42,8 +44,11 @@ describe('entrypoint import surface', () => {
   // The import of knight-damage.js is side-effect-bounded: exactly the five
   // hook registrations (the commented preCreateActor/renderActorSheet block
   // compiles to nothing). If a future top-level statement executes, this list
-  // changes and the unit import stops being safe.
-  it('importing the entrypoint registers exactly the five Hooks registrations and nothing else executes (init callback body stays unrun — CONFIG is never touched)', () => {
+  // changes and the unit import stops being safe. The import itself never runs
+  // the init callback body (CONFIG is never touched at import); the dedicated
+  // init-pin test below invokes the RECORDED init handler explicitly, against
+  // a disposable CONFIG stub it installs and removes itself.
+  it('importing the entrypoint registers exactly the five Hooks registrations and nothing else executes (init callback body stays unrun at import — CONFIG is never touched)', () => {
     expect(registeredHooks().map((r) => [r.hook, r.once])).toEqual([
       ['init', true],
       ['preUpdateChatMessage', false],
@@ -51,6 +56,44 @@ describe('entrypoint import surface', () => {
       ['preCreateActiveEffect', false],
       ['renderModuleSheet', false],
     ]);
+  });
+});
+
+describe('init-hook statusEffects registration (knight-damage.js:18-73) — the shrine shape case F replays live', () => {
+  // The e2e Phase-6 case F only exists LOCALLY (e2e never runs in CI), so the shrine effect SHAPE
+  // it replays — the module's own CONFIG.statusEffects rows — is pinned here against the REAL init
+  // handler. Mutation-sensitive: key, mode, priority and value are all asserted. A mode-2 change
+  // keyed on system.champDeForce.VALUE never moves the prepared row (plan Phase-6 finding 7) —
+  // only this DERIVED .base key shape flows through the knight model.
+  it('the init handler pushes the shrine (+6) and shrine-ameliore (+8) statusEffects rows with changes keyed on system.champDeForce.base, mode 2 (add), priority 4, and registers the addReminder query', async () => {
+    const initHooks = registeredHooks('init');
+    expect(initHooks).toHaveLength(1);
+    const configStub = { statusEffects: [], queries: {} };
+    const previousCONFIG = globalThis.CONFIG;
+    globalThis.CONFIG = configStub;
+    try {
+      await initHooks[0].fn();
+    } finally {
+      if (previousCONFIG === undefined) delete globalThis.CONFIG;
+      else globalThis.CONFIG = previousCONFIG;
+    }
+    expect(configStub.queries['knight-damage.addReminder']).toBeTypeOf('function');
+    expect(configStub.statusEffects.find((row) => row.id === 'shrine')).toEqual({
+      id: 'shrine',
+      name: 'Shrine',
+      label: 'Shrine',
+      icon: 'icons/svg/aura.svg',
+      img: 'icons/svg/aura.svg',
+      changes: [{ key: 'system.champDeForce.base', mode: 2, priority: 4, icon: '', value: 6 }],
+    });
+    expect(configStub.statusEffects.find((row) => row.id === 'shrine-ameliore')).toEqual({
+      id: 'shrine-ameliore',
+      name: 'Shrine amélioré',
+      label: 'Shrine amélioré',
+      icon: 'icons/svg/angel.svg',
+      img: 'icons/svg/angel.svg',
+      changes: [{ key: 'system.champDeForce.base', mode: 2, priority: 4, icon: '', value: 8 }],
+    });
   });
 });
 
