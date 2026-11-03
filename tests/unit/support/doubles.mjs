@@ -157,6 +157,10 @@ export function makeHtmlRecorder({ html = {} } = {}) {
       calls.push({ selector, action: 'remove' });
       return this;
     },
+    prepend(content) {
+      calls.push({ selector, action: 'prepend', content });
+      return this;
+    },
     html() {
       calls.push({ selector, action: 'html' });
       if (!(selector in canned)) {

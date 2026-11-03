@@ -368,3 +368,128 @@ describe('death reminder card via the registered preCreateActiveEffect hook — 
     expect(recordedMessages()).toEqual([]);
   });
 });
+
+describe('renderModuleSheet loup injection via the registered hook (knight-damage.js:153-220)', () => {
+  // The hook fires for the KNIGHT system's item type 'module' (NOT a Foundry module): the sheet's
+  // object is a knight module-item. The e2e Phase-6 case D pins this live; these pins lock the
+  // two-pass contract the live sheet depends on: FIRST pass creates the 8-key all-'unactive' map
+  // and RETURNS (no DOM touched at all), a LATER pass prepends the 8 buttons whose classes mirror
+  // the stored flag values and binds one click handler per key that writes the flag value as the
+  // button className LITERALLY (no normalization).
+  const LOUP_KEYS = [
+    'choc',
+    'degatscontinus',
+    'percearmure',
+    'peur',
+    'ignorearmure',
+    'ignorecdf',
+    'drainenergie',
+    'domination',
+  ];
+
+  function runLoupHook(sheet, html) {
+    const hooks = registeredHooks('renderModuleSheet');
+    expect(hooks).toHaveLength(1);
+    return hooks[0].fn(sheet, html);
+  }
+
+  function makeLoupSheet({ name = 'Instinct du loup', loupFlag } = {}) {
+    const setCalls = [];
+    const object = {
+      name,
+      system: { active: { base: false } },
+      flags: loupFlag === undefined ? {} : { 'knight-damage': { loup: structuredClone(loupFlag) } },
+      setFlag(scope, key, value) {
+        setCalls.push({ scope, key, value: JSON.parse(JSON.stringify(value)) });
+        object.flags[scope] ??= {};
+        object.flags[scope][key] = value;
+        return Promise.resolve();
+      },
+      getFlag(scope, key) {
+        return object.flags[scope]?.[key];
+      },
+    };
+    return { object, setCalls };
+  }
+
+  // Fake DOM button for the captured click handlers: className is the LIVE class-token string the
+  // handler reads AFTER its two classList.toggle calls.
+  function makeButton(className) {
+    const tokens = new Set(className.split(' ').filter(Boolean));
+    return {
+      classList: { toggle: (t) => (tokens.has(t) ? tokens.delete(t) : tokens.add(t)) },
+      get className() {
+        return Array.from(tokens).join(' ');
+      },
+    };
+  }
+
+  it('a non-"Instinct du loup" module sheet is skipped whole: no flag write, no DOM call at all', async () => {
+    const sheet = makeLoupSheet({ name: 'Rire du corbeau' });
+    const html = makeHtmlRecorder();
+    await runLoupHook(sheet, html);
+    expect(sheet.setCalls).toEqual([]);
+    expect(html.calls).toEqual([]);
+  });
+
+  it('FIRST pass (no loup flag yet) writes EXACTLY the 8-key all-"unactive" map and RETURNS before touching the DOM (no prepend, no bindings — the buttons only exist from the NEXT render pass)', async () => {
+    const sheet = makeLoupSheet();
+    const html = makeHtmlRecorder();
+    await runLoupHook(sheet, html);
+    expect(sheet.setCalls).toHaveLength(1);
+    expect(sheet.setCalls[0]).toEqual({
+      scope: 'knight-damage',
+      key: 'loup',
+      value: Object.fromEntries(LOUP_KEYS.map((k) => [k, 'unactive'])),
+    });
+    expect(html.calls).toEqual([]);
+  });
+
+  it('SECOND pass prepends the 8-button block into .niveau_n1 with the classes MIRRORED from the stored map (one "active" outlier rides through byte-exact) and binds exactly one click handler per key', async () => {
+    const stored = Object.fromEntries(LOUP_KEYS.map((k) => [k, 'unactive']));
+    stored.percearmure = 'active';
+    const sheet = makeLoupSheet({ loupFlag: stored });
+    const html = makeHtmlRecorder();
+    await runLoupHook(sheet, html);
+
+    const prepends = html.calls.filter((c) => c.action === 'prepend');
+    expect(prepends).toHaveLength(1);
+    expect(prepends[0].selector).toBe('.niveau_n1');
+    for (const key of LOUP_KEYS) {
+      expect(prepends[0].content).toContain(`data-option="${key}" class="${stored[key]}"`);
+    }
+    // No flag re-creation when the map already exists.
+    expect(sheet.setCalls).toEqual([]);
+
+    for (const key of LOUP_KEYS) {
+      const bindings = html.onBindings(`[data-option=${key}]`);
+      expect(bindings).toHaveLength(1);
+      expect(bindings[0].event).toBe('click');
+      expect(bindings[0].data).toEqual({ module: sheet.object });
+    }
+    expect(html.calls.filter((c) => c.action === 'on')).toHaveLength(LOUP_KEYS.length);
+  });
+
+  it('the click handler rewrites flag[key] to the className LITERALLY (unnormalized): toggling "unactive" off and "active" on lands "active"; a foreign class token lands verbatim and the 7 sibling keys keep their stored bytes', async () => {
+    const stored = Object.fromEntries(LOUP_KEYS.map((k) => [k, 'unactive']));
+    const sheet = makeLoupSheet({ loupFlag: stored });
+    const html = makeHtmlRecorder();
+    await runLoupHook(sheet, html);
+
+    const normal = html.onBindings('[data-option=percearmure]')[0];
+    normal.handler({ currentTarget: makeButton('unactive'), data: normal.data });
+    expect(sheet.object.getFlag('knight-damage', 'loup')).toEqual({
+      ...Object.fromEntries(LOUP_KEYS.map((k) => [k, 'unactive'])),
+      percearmure: 'active',
+    });
+
+    const foreign = html.onBindings('[data-option=peur]')[0];
+    foreign.handler({ currentTarget: makeButton('choisi actif'), data: foreign.data });
+    const map = sheet.object.getFlag('knight-damage', 'loup');
+    // The handler toggles ONLY its two known tokens (both absent here -> ADDED) and copies the
+    // resulting class string VERBATIM — the flag byte is the full resulting className.
+    expect(map.peur).toBe('choisi actif unactive active');
+    expect(map.percearmure).toBe('active');
+    expect(map.choc).toBe('unactive');
+  });
+});
