@@ -165,7 +165,7 @@ describe('destructeur', () => {
     expect(damage.damageRepartition).toEqual({ armure: 68, sante: 13 });
   });
 
-  // extractTraitValue guard (2026-10-31, helpers.js:29): bool-true trait whose
+  // extractTraitValue guard (2026-10-31, helpers.js:30): bool-true trait whose
   // label span is MISSING from the chat content yields result 0 instead of
   // undefined. Without the guard applyDamageTrait's `56 + undefined` poisoned
   // the damage to NaN and every downstream number (armure soak, /5 carry,
@@ -182,7 +182,7 @@ describe('destructeur', () => {
   });
 });
 
-describe('malformed weapon.effets.raw entries (getTraitValue guard, helpers.js:15-16)', () => {
+describe('malformed weapon.effets.raw entries (getTraitValue guard, helpers.js:16-17)', () => {
   // A bare 'penetrant' keyword (no number) used to parse to NaN: applyTraitCdf's
   // `actorStats.cdf <= NaN` is false so it took the subtraction branch and
   // `effectiveStats.cdf = 10 - NaN = NaN` poisoned the ENTIRE chain
@@ -202,7 +202,7 @@ describe('malformed weapon.effets.raw entries (getTraitValue guard, helpers.js:1
   });
 });
 
-describe('destructeur gate (damageKnight.js:151-154: bonus only when the armure track runs)', () => {
+describe('destructeur gate (damageKnight.js:152-155: bonus only when the armure track runs)', () => {
   // Negative controls for the two scenarios where the armure track is skipped.
   // The trait is parsed (bool + result) but the gate
   // `effectiveStats.armure > 0 && (!isArmorIgnored() || cuirDuTaureau)` blocks
@@ -339,6 +339,48 @@ describe('armor bypass (worn armor <= perce-armure)', () => {
     expect(damage.actorStats.sante).toBe(0);
     expect(damage.damageRepartition).toEqual({ armure: 30, armureGuardian: 15, sante: 20 });
   });
+
+  // ACTIVE-gate twin of the two pins above: applyInstinctDuLoup's FIRST guard
+  // (damageKnight.js:47 `if (loup?.system?.active?.base || loup === undefined) return;`)
+  // treats a TRUTHY system.active.base as "item not active" (INTENDED author polarity)
+  // and early-returns BEFORE any flag read — deleting the `loup?.system?.active?.base ||`
+  // term would let the percearmure:'active' flag zero perceArmure on an INACTIVE item.
+  it('instinct-du-loup ACTIVE gate: system.active.base TRUTHY (item NOT active) + flag percearmure:"active" — applyInstinctDuLoup early-returns, perceArmure STAYS 40 and the worn victim stays bypassed: {armure:0, sante:20}, armure 30 / armureGuardian 15 untouched, stranded 36 (guard deleted: perceArmure 0 -> the full soak path {armure:30, armureGuardian:15, sante:20}, stranded 0)', async () => {
+    const loup = makeItem('Instinct du loup', {
+      system: { active: { base: true } },
+      flags: { 'knight-damage': { loup: { percearmure: 'active' } } },
+    });
+    const { damage } = knightFixture({ system: knightSystem({ armure: 30 }), actorItems: [loup] });
+    // Checked BEFORE calculate too: the flag is only ever read inside applyInstinctDuLoup.
+    expect(damage.perceArmure).toBe(40);
+    await damage.calculate();
+    expect(damage.perceArmure).toBe(40);
+    expect(damage.damageRepartition).toEqual({ armure: 0, sante: 20 });
+    expect(damage.actorStats.armure).toBe(30);
+    expect(damage.actorStats.armureGuardian).toBe(15);
+    expect(damage.actorStats.sante).toBe(0);
+    // INTENDED (author) bypass-drop tail (same 36 stranded as the item-less twin above).
+    expect(damage.damage).toBe(36);
+  });
+
+  // Truthy twin of the Cuir-du-taureau pins: setCuirTaureau's guard (damageKnight.js:41
+  // `if (taureau?.system?.active?.base || taureau === undefined) return;`) is the same
+  // inverted author convention. Flipping the guard polarity (returning only when base is
+  // FALSY) makes this TRUTHY-base item active — the armure track re-engages and every
+  // number below moves ({armure:30, armureGuardian:15, sante:20}, stranded 0).
+  it('Cuir du taureau with system.active.base TRUTHY (item NOT active, INTENDED author polarity): cuirDuTaureau false — the worn victim stays bypassed with the exact numbers of the item-less negative twin: {armure:0, sante:20}, armure 30 / armureGuardian 15 untouched, stranded 36', async () => {
+    const { damage } = knightFixture({
+      system: knightSystem({ armure: 30 }),
+      actorItems: [makeItem('Cuir du taureau', { system: { active: { base: true } } })],
+    });
+    expect(damage.cuirDuTaureau).toBe(false);
+    await damage.calculate();
+    expect(damage.damageRepartition).toEqual({ armure: 0, sante: 20 });
+    expect(damage.actorStats.armure).toBe(30);
+    expect(damage.actorStats.armureGuardian).toBe(15);
+    expect(damage.actorStats.sante).toBe(0);
+    expect(damage.damage).toBe(36);
+  });
 });
 
 describe('instinct-du-loup ignorearmure / ignorecdf flags (damageKnight.js:54-59)', () => {
@@ -421,6 +463,29 @@ describe('champ de force', () => {
     expect(damage.actorStats.armure).toBe(40);
     expect(damage.actorStats.sante).toBe(8);
     expect(damage.damageRepartition).toEqual({ armure: 60, sante: 12 });
+  });
+
+  // EXACT-zero boundary of the post-CdF early return (damageKnight.js:104
+  // `if (this.damage <= 0) return;`): target 4 == effective CdF 4 lands damage on
+  // exactly 0 — the STRICTER `<=` returns before a single repartition key is ever
+  // initialised. Flipping it to `damage < 0` continues the whole chain and the
+  // armure/sante stages each add their own 0 entry: {armure: 0, sante: 0}.
+  it('post-CdF EXACT-zero boundary: target 4 vs effective CdF 4 -> damage lands exactly on 0, the damage <= 0 early-return fires — repartition toEqual {} (NO armure/sante key initialised) and every stat untouched (`< 0` mutant: {armure: 0, sante: 0})', async () => {
+    const { damage } = knightFixture({ targetValue: 4 });
+    await damage.calculate();
+    expect(damage.effectiveStats.cdf).toBe(4);
+    expect(damage.damage).toBe(0);
+    expect(damage.damageRepartition).toEqual({});
+    expect(damage.actorStats).toEqual({
+      armure: 100,
+      cdf: 10,
+      egide: 0,
+      armureGuardian: 15,
+      cdfGuardian: 5,
+      sante: 20,
+      espoir: 15,
+      energie: 12,
+    });
   });
 });
 
@@ -601,7 +666,7 @@ describe('Rire du corbeau (energie split via the real DialogV2 ok.callback)', ()
     expect(recordedQueries()).toEqual([]);
   });
 
-  // damageKnight.js:282: `if (!Number.isFinite(value)) return 0;` sits BEFORE the
+  // damageKnight.js:283: `if (!Number.isFinite(value)) return 0;` sits BEFORE the
   // `value <= 0` check. Without it, NaN fails all three guards (NaN <= 0 and
   // NaN >= 28 are both false) and returns NaN, which poisons every later number
   // (energie, armure and sante would all end up NaN, repartition too).
@@ -618,7 +683,7 @@ describe('Rire du corbeau (energie split via the real DialogV2 ok.callback)', ()
     expect(recordedQueries()).toEqual([]);
   });
 
-  // Same finite guard as the NaN pin above (damageKnight.js:282), on the +Infinity side.
+  // Same finite guard as the NaN pin above (damageKnight.js:283), on the +Infinity side.
   // Its FIRST-POSITION placement (before `value <= 0` and before the clamp) is what is
   // load-bearing here: with the guard dropped or demoted after the clamp, +Infinity
   // would sail past `<= 0` and satisfy `value >= trunc(56/2)=28` (damage at the corbeau
@@ -638,7 +703,7 @@ describe('Rire du corbeau (energie split via the real DialogV2 ok.callback)', ()
   });
 
   // askDamageEnergie wraps the WHOLE prompt call in try/catch (damageKnight.js:
-  // 272-291), so a rejected prompt leaves the initial `damageEnergie = 0`.
+  // 273-292), so a rejected prompt leaves the initial `damageEnergie = 0`.
   it('prompt REJECTS (rejectClose semantics, async): try/catch keeps damageEnergie 0 and the plain path continues — one prompt recorded, no retry', async () => {
     setDialogPrompt(async () => {
       throw new Error('prompt rejected');
@@ -656,7 +721,7 @@ describe('Rire du corbeau (energie split via the real DialogV2 ok.callback)', ()
   // STUB-ONLY scenario: the real core's DialogV2.prompt is an async static — it
   // cannot throw synchronously — and the real close-without-button path rejects
   // asynchronously via rejectClose (pinned by the REJECTS test above). This test
-  // exists solely to pin the damageKnight.js:289 `catch { //pass }` rescue against
+  // exists solely to pin the damageKnight.js:290 `catch { //pass }` rescue against
   // a synchronous throw inside the call, so any throw-or-rejection between the
   // prompt call and its await provably leaves damageEnergie at its initial 0.
   it('prompt throws SYNCHRONOUSLY inside DialogV2.prompt (stub-only — real prompt() cannot throw sync; the real rejection path is the rejectClose twin above): the same try/catch rescue — plain path, still exactly one prompt recorded', async () => {
@@ -670,7 +735,7 @@ describe('Rire du corbeau (energie split via the real DialogV2 ok.callback)', ()
     expect(damage.actorStats.energie).toBe(12);
   });
 
-  // Load-bearing clamp (damageKnight.js:284): energie 40 absorbs the whole
+  // Load-bearing clamp (damageKnight.js:285): energie 40 absorbs the whole
   // requested split, so the only thing stopping the extra units is the clamp.
   // CdF 0 is zeroed by penetrant 6, so the corbeau point sees the FULL damage 20
   // and the half-split bound is trunc(20/2) = 10: requested 15 comes back 10.

@@ -4,7 +4,7 @@
 //
 // Assertions:
 //   A. the module's renderChatMessageHTML hook injects its five damage buttons on the replayed
-//      message (knight-damage.js:250-288),
+//      message (knight-damage.js:257-295),
 //   B. flags.knight.weapon.effets.raw round-trips to exactly ['percearmure 40','penetrant 6'],
 //   C. the French-HTML regex sources taken from the module's own code match (or deliberately do
 //      not match) the replayed message.content.
@@ -16,6 +16,7 @@ import config from './config.mjs';
 import { loadFramework, respawnPreservingSymlinks } from './support/framework.mjs';
 import { acquireSpawnMutex } from './support/spawn-lock.mjs';
 import { loadRecordedFixture, STANDARD_FIXTURE_NAME } from './support/fixture-store.mjs';
+import { deleteMessagesInPage } from './support/chat.mjs';
 
 /* global process */
 
@@ -31,11 +32,11 @@ if (respawnPreservingSymlinks()) {
 
 // Regex sources copied from the module's own code (keep in sync with src/ — this file asserts
 // the RECORDED fixture satisfies them, it does not re-derive them):
-//   knight-damage.js:253 (button-injection gate), damageBase.js:46/49/53 (Débordement fallback),
+//   knight-damage.js:260 (button-injection gate), damageBase.js:46/49/53 (Débordement fallback),
 //   helpers.js:27-29 (extractTraitValue span regex, trait label from const.js:2).
 const MODULE_REGEXES = [
   {
-    label: 'button-injection regex (knight-damage.js:253)',
+    label: 'button-injection regex (knight-damage.js:260)',
     source: 'Dégâts</div>|Violence</div>|Débordement</div>',
     expectHit: true,
   },
@@ -53,6 +54,10 @@ async function main(Framework) {
   acquireSpawnMutex(); // ownership before ANYTHING (see support/spawn-lock.mjs)
   const fw = new Framework(config);
   const results = [];
+  // Review-6 C3: the replay card must not leak into the boot-persistent chat log — this suite
+  // used to create one per run and never delete it (the widened Phase-3 attack-card baseline
+  // would then have to absorb that residue). Hoisted out of the try so finally can sink it.
+  let created = null;
 
   const { meta, message } = loadRecordedFixture(STANDARD_FIXTURE_NAME);
   console.log(
@@ -62,7 +67,12 @@ async function main(Framework) {
   try {
     await fw.start();
 
-    const versions = await fw.executeInFoundry(() => ({ knight: game.system.version, core: game.version }));
+    const versions = await fw.executeInFoundry(() => ({
+      knight: game.system.version,
+      core: game.version,
+      chatSize: game.messages.size,
+    }));
+    console.log(`[fixtures] entry chat log size: ${versions.chatSize}`);
     results.push([
       `live system/core match fixture meta (knight ${meta.knightSystemVersion} / core ${meta.coreVersion})`,
       versions.knight === meta.knightSystemVersion && versions.core === meta.coreVersion,
@@ -77,7 +87,7 @@ async function main(Framework) {
         .then((m) => m.id)
         .catch(() => null);
 
-    let created = await fw.executeInFoundry(createInPage, message);
+    created = await fw.executeInFoundry(createInPage, message);
     let replayedWithRolls = true;
     if (!created) {
       replayedWithRolls = false;
@@ -198,6 +208,19 @@ async function main(Framework) {
     await fw.screenshot('fixtures-failure.png').catch(() => {});
     throw err;
   } finally {
+    // Review-6 C3: sink the replay card at teardown (best-effort: a create failure left
+    // `created` null). The delete promise is awaited page-side (chat.mjs), so the chat log is
+    // genuinely shrunk before stop(). The logged counts are the back-to-back leak evidence:
+    // two runs in a row on the same data dir must print the SAME entry/exit counts.
+    if (created) {
+      await fw
+        .executeInFoundry(deleteMessagesInPage, [created])
+        .catch((err) => console.log(`[fixtures] replay-card delete FAILED: ${err.message ?? err}`));
+    }
+    await fw
+      .executeInFoundry(() => ({ size: game.messages.size }))
+      .then((s) => console.log(`[fixtures] exit chat log size after replay-card delete: ${s.size}`))
+      .catch(() => {});
     await fw.stop();
     console.log('Foundry server + browser stopped.');
   }

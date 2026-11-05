@@ -40,9 +40,11 @@ import {
   deleteMessagesInPage,
   findNewRecapMessageInPage,
   listMessageIdsInPage,
+  revertDomStateInPage,
   storedContentPersistedInPage,
 } from './support/chat.mjs';
 import {
+  actorEmbeddedStateInPage,
   controlTokenInPage,
   installActorUpdateCounterInPage,
   readActorUpdatesInPage,
@@ -149,21 +151,8 @@ const findNewSideCardInPage = (excludeIds, marker) => {
   return { id: message.id, content: message.content, kdFlags: message.flags?.['knight-damage'] ?? null };
 };
 
-// Revert DOM probe against the PINNED recap card (same predicate contract as the Phase-3 suite):
-// null until line-through AND revert-gone both hold. The vehicule/mecha revert is the SYNCHRONOUS
-// DamageBase.revertDamage path — no knight-style setTimeout.
-const revertDomStateInPage = (msgId) => {
-  const card = Array.from(document.querySelectorAll('.chat-scroll li.chat-message')).find(
-    (li) => li.dataset.messageId === msgId,
-  );
-  if (!card) return null;
-  const recap = card.querySelector('.recap');
-  const revertBtn = card.querySelector('.revert-damage');
-  if (!recap) return null;
-  const lineThrough = /line-through/.test(recap.getAttribute('style') ?? '');
-  const revertButtonGone = revertBtn === null;
-  return lineThrough && revertButtonGone ? { lineThrough: true, revertButtonGone: true } : null;
-};
+// Revert DOM probe: support/chat.mjs revertDomStateInPage (hoisted — review-6 C1). The
+// vehicule/mecha revert is the SYNCHRONOUS DamageBase.revertDamage path — no knight-style setTimeout.
 
 // One-shot chat-log leak scan (document-side): flagged recaps AND the flagless side cards.
 // Markers arrive as trailing args (stringify rule) so the constants at the top of the file are
@@ -301,6 +290,14 @@ async function main(Framework) {
     const startMec = await matchBaseline(MEC_ACTOR_ID, SEED_STATS_MEC);
     if (!startVeh || !startMec)
       throw new Error('vehicule/mecha stats are NOT at the seed baseline at suite start — world poisoning');
+
+    // Review-6 D3: victim embedded-state baselines (effect status rows + item-id lists) —
+    // mirrored from the Phase-6 end-checks; this suite never grants victims statuses/items.
+    const bootVehEmbedded = await fw.executeInFoundry(actorEmbeddedStateInPage, VEH_ACTOR_ID);
+    const bootMecEmbedded = await fw.executeInFoundry(actorEmbeddedStateInPage, MEC_ACTOR_ID);
+    console.log(
+      `[vm] boot victim embedded states: veh ${JSON.stringify(bootVehEmbedded)} / mecha ${JSON.stringify(bootMecEmbedded)}`,
+    );
 
     const counterInstalled = await fw.executeInFoundry(installActorUpdateCounterInPage);
     console.log(`[vm] preUpdateActor counter: ${counterInstalled}`);
@@ -717,10 +714,17 @@ async function main(Framework) {
         await fw.waitFor(clickOnMessageCard, 15000, msgId, 'button[data-action="applyDamage"]');
         const after = await fw.executeInFoundry(listMessageIdsInPage);
         const atkStats = await fw.executeInFoundry(readAtkStatsInPage);
+        // Review-6 D9 (INFO-cheap): a SECOND id count after the stats read — the recap/side
+        // cards of an (unexpectedly) applied damage would surface with document latency, so
+        // one immediate count cannot prove the ABSENCE; a mid-case silent abort that skipped
+        // the click can no longer pass on the first count alone either.
+        const afterRecheck = await fw.executeInFoundry(listMessageIdsInPage);
         push(
-          "case7 negative: 'pnj'-controlled token + Normal click -> no recap/side card created, no stats touched (createDamageObject returns false for pnj)",
-          after.length === before.length && statsEqual(atkStats, SEED_STATS_ATK),
-          `new messages ${after.length - before.length}, atk stats ${JSON.stringify(atkStats)}`,
+          "case7 negative: 'pnj'-controlled token + Normal click -> no recap/side card created (chat-log size unchanged across TWO counts, before AND after the stats read), no stats touched (createDamageObject returns false for pnj)",
+          after.length === before.length &&
+            afterRecheck.length === before.length &&
+            statsEqual(atkStats, SEED_STATS_ATK),
+          `new messages ${afterRecheck.length - before.length} (first ${after.length - before.length}), atk stats ${JSON.stringify(atkStats)}`,
         );
       } finally {
         await cleanup(null, [msgId], null);
@@ -748,6 +752,18 @@ async function main(Framework) {
       'poisoning self-check: NO knight-damage recap AND NO flagless passenger/pilote card survives in the (boot-persistent) chat log',
       leaks.recaps === '' && leaks.sideCards === '',
       `recaps: ${leaks.recaps} | side cards: ${leaks.sideCards}`,
+    );
+    // Review-6 D3: victim EFFECT+ITEM end-scans (mirroring the Phase-6 end-checks and the
+    // Phase-3 attacker scans) — embedded state of both victims byte-identical to boot.
+    const endVehEmbedded = await fw.executeInFoundry(actorEmbeddedStateInPage, VEH_ACTOR_ID);
+    const endMecEmbedded = await fw.executeInFoundry(actorEmbeddedStateInPage, MEC_ACTOR_ID);
+    push(
+      'poisoning self-check: vehicule AND mecha embedded effects (status rows) and item-id lists identical to their boot baselines (no stray statuses/items from this suite)',
+      deepEqualJson(endVehEmbedded.effects, bootVehEmbedded.effects) &&
+        deepEqualJson(endVehEmbedded.items, bootVehEmbedded.items) &&
+        deepEqualJson(endMecEmbedded.effects, bootMecEmbedded.effects) &&
+        deepEqualJson(endMecEmbedded.items, bootMecEmbedded.items),
+      `veh boot ${JSON.stringify(bootVehEmbedded)} -> end ${JSON.stringify(endVehEmbedded)} | mecha boot ${JSON.stringify(bootMecEmbedded)} -> end ${JSON.stringify(endMecEmbedded)}`,
     );
 
     // ───────────────────────── summary ─────────────────────────

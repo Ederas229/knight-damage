@@ -64,6 +64,7 @@ import {
   deleteMessagesInPage,
   findNewRecapMessageInPage,
   listMessageIdsInPage,
+  revertDomStateInPage,
   storedContentPersistedInPage,
 } from './support/chat.mjs';
 import {
@@ -243,21 +244,9 @@ const newDeathCardInPage = (excludeIds, energieMarker, espoirMarker) => {
   };
 };
 
-// Revert DOM probe against the PINNED recap card (same predicate contract as Phase 3/4): null until
-// BOTH line-through AND revert-gone hold. The flag decrement itself is waited via the shared
-// moduleFlagMatchesInPage predicate (the revert's query is un-awaited downstream).
-const revertDomStateInPage = (msgId) => {
-  const card = Array.from(document.querySelectorAll('.chat-scroll li.chat-message')).find(
-    (li) => li.dataset.messageId === msgId,
-  );
-  if (!card) return null;
-  const recap = card.querySelector('.recap');
-  const revertBtn = card.querySelector('.revert-damage');
-  if (!recap) return null;
-  const lineThrough = /line-through/.test(recap.getAttribute('style') ?? '');
-  const revertButtonGone = revertBtn === null;
-  return lineThrough && revertButtonGone ? { lineThrough: true, revertButtonGone: true } : null;
-};
+// Revert DOM probe: support/chat.mjs revertDomStateInPage (hoisted — review-6 C1). The flag
+// decrement itself is waited via the shared moduleFlagMatchesInPage predicate (the revert's
+// query is un-awaited downstream).
 
 // One-shot chat-log leak scan (document-side): flagged recaps AND BOTH flagless death-card marker
 // families (carry-flag (a) — the death card is created with NO flags). Markers arrive as trailing
@@ -687,6 +676,15 @@ async function main(Framework) {
         await restoreBaselineBetween(vicSnap, vicFlags);
         await fw.executeInFoundry(updateActorInPage, VIC_ACTOR_ID, { 'system.espoir.reduction': 200 });
         const reductionBack = await fw.executeInFoundry(readEspoirReductionInPage, VIC_ACTOR_ID);
+        // Review-6 D8: the write-back read becomes an EXPLICIT pushed assertion — before this,
+        // a schema-dropped write silently SKIPPED the two floor pushes (23 -> 21 with no FAIL
+        // line). The if/else stays as the documented skip guard, but the suite now grades the
+        // drop loudly instead of shrinking silently.
+        push(
+          'case4: system.espoir.reduction 200 write-back is OBSERVABLE live (the floor sub-case mutation lands — without it the floor pins below would silently vanish)',
+          reductionBack === 200,
+          `write-back reads ${JSON.stringify(reductionBack)}`,
+        );
         if (reductionBack === 200) {
           floorMsg = await replay(mutateTargetValue, victimSpeaker);
           const floored = await applyDamageAndAwait(floorMsg, 'applyDamageEspoir', SEED_STATS, recapIds);

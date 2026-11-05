@@ -7,6 +7,9 @@
 import { describe, it, expect } from 'vitest';
 import { RECORDED_FIXTURE_META, STANDARD_RAW, standardKnightMessageFixture } from './support/knight-fixtures.mjs';
 import { loadRecordedFixture, PINNED_KNIGHT_VERSION, TRAIT_FIXTURE_NAME } from '../e2e/support/fixture-store.mjs';
+// Review-6 C2: the pip-spread/roll-shape helpers come from the recorder's SINGLE source
+// (the unit->e2e-support import precedent above already exists); both local copies deleted.
+import { asRoll, planPips } from '../e2e/support/attack-run.mjs';
 
 describe('recorded knight attack fixture = standard knight message contract', () => {
   const fixture = standardKnightMessageFixture();
@@ -20,7 +23,7 @@ describe('recorded knight attack fixture = standard knight message contract', ()
 
   it('content carries the French damage-label fragment the module gates on (Dégâts</div>)', () => {
     expect(fixture.content).toMatch(/Dégâts<\/div>/);
-    // The module injection regex (knight-damage.js:253) matches…
+    // The module injection regex (knight-damage.js:260) matches…
     expect(fixture.content.match(new RegExp('Dégâts</div>|Violence</div>|Débordement</div>'))).not.toBeNull();
     // …while the Débordement/Oriflamme fallback markers must NOT be present, so the
     // targets[].value path (damageBase.js:43-44) is the live damage source.
@@ -93,13 +96,6 @@ describe('recorded knight attack fixture = standard knight message contract', ()
     // value pin. Mirror of the recorder's gate, now CI-enforced on the committed fixture:
     // exactly ONE pool per phase, plan die shape, and the override extension's exact
     // base/remainder pip split (dice-override/content.js:45-51).
-    const planPips = (plan) => {
-      const base = Math.floor(plan.total / plan.count);
-      return Array.from(
-        { length: plan.count },
-        (_, i) => base + (i === plan.count - 1 ? plan.total - base * plan.count : 0),
-      );
-    };
     const cases = [
       ['damage rolls', fixture.rolls, RECORDED_FIXTURE_META.dicePlan.damage],
       ['flags.knight.attaque', fixture.flags.knight.attaque, RECORDED_FIXTURE_META.dicePlan.attack],
@@ -107,11 +103,18 @@ describe('recorded knight attack fixture = standard knight message contract', ()
     for (const [label, entries, plan] of cases) {
       expect(entries, label).toHaveLength(1);
       // v14: ChatMessage.rolls are serialized JSON strings; flags.knight.attaque holds live objects.
-      const roll = typeof entries[0] === 'string' ? JSON.parse(entries[0]) : entries[0];
+      const roll = asRoll(entries[0]);
       const dice = (roll.terms ?? []).filter((t) => t.class === 'Die');
       expect(dice, `${label}: exactly one Die term`).toHaveLength(1);
       expect(dice[0].faces, label).toBe(plan.faces);
       expect(dice[0].number, label).toBe(plan.count);
+      // Review-6 D9: the results COUNT and the ALL-ACTIVE shape are pinned too — the old
+      // filter-then-compare read would silently forgive a rerolled/blanked (inactive) pip.
+      expect(dice[0].results.length, `${label}: every planned die produced a result`).toBe(plan.count);
+      expect(
+        dice[0].results.every((r) => r.active === true),
+        `${label}: all pips active`,
+      ).toBe(true);
       expect(
         dice[0].results.filter((r) => r.active === true).map((r) => r.result),
         label,
@@ -122,7 +125,7 @@ describe('recorded knight attack fixture = standard knight message contract', ()
 
   it('content carries the module DOM anchors its injection depends on', () => {
     // The unit doubles answer by canned SELECTOR, not DOM, so a knight-system change to the
-    // real message shape (e.g. the .knight-roll append anchor at knight-damage.js:261) would
+    // real message shape (e.g. the .knight-roll append anchor at knight-damage.js:268) would
     // keep the unit suite green and only surface in local-only e2e — pin the anchors here so
     // CI catches that class of drift. (The trait-bearing recording that exercises the REAL
     // label/value span path is the sibling TRAIT fixture — pinned in its own describe below;
@@ -183,14 +186,6 @@ describe('recorded trait fixture = real extractTraitValue HTML contract', () => 
   });
 
   it('PLAN-DRIVEN pip determinism: the trait damage message carries TWO pools (3D6 + the 2D6 sub-roll)', () => {
-    const planPips = (plan) => {
-      const base = Math.floor(plan.total / plan.count);
-      return Array.from(
-        { length: plan.count },
-        (_, i) => base + (i === plan.count - 1 ? plan.total - base * plan.count : 0),
-      );
-    };
-    const asRoll = (e) => (typeof e === 'string' ? JSON.parse(e) : e);
     const damagePools = traitFixture.rolls.map(asRoll);
     expect(damagePools).toHaveLength(2); // main 3D6 + destructeur 2D6 (standard plan had 1)
     const byShape = (faces, count) =>
@@ -202,6 +197,15 @@ describe('recorded trait fixture = real extractTraitValue HTML contract', () => 
       expect(roll, `${plan.faces}d${plan.count} pool missing from the trait damage message`).toBeTruthy();
       const dice = (roll.terms ?? []).filter((t) => t.class === 'Die');
       expect(dice).toHaveLength(1);
+      // Review-6 D9 twin of the standard-plan guard: results COUNT + ALL-ACTIVE shape pinned
+      // BEFORE the pip values, so a rerolled/blanked pip can never hide behind the filter.
+      expect(dice[0].results.length, `${plan.faces}d${plan.count}: every planned die produced a result`).toBe(
+        plan.count,
+      );
+      expect(
+        dice[0].results.every((r) => r.active === true),
+        `${plan.faces}d${plan.count}: all pips active`,
+      ).toBe(true);
       expect(dice[0].results.filter((r) => r.active === true).map((r) => r.result)).toEqual(planPips(plan));
       expect(roll.total).toBe(plan.total);
     }

@@ -25,8 +25,6 @@
 //      pools fire per recorded run: the attack pool and the damage pool (both plain d6 pools
 //      through Foundry's Roll API, hence dice-override-pinnable).
 
-import { fileURLToPath } from 'node:url';
-
 // World fixture anchors (docs/testing-plan.md Phase 0 tables; stable ids)
 export const ATTACKER_ACTOR_ID = 'kdtAtkPnjAAAAAAA';
 export const ATTACKER_TOKEN_NAME = 'atk-pnj';
@@ -206,8 +204,13 @@ export const dumpNewDamageMessageInPage = (excludeIds, mustHaveValueFor) => {
     ),
   );
   if (ready.length === 0) return null; // waitFor retries
+  // Every candidate id is surfaced on the anomaly too (chat.mjs findNewRecapMessageInPage shape —
+  // review-6 C3) so a CALLER can sink them before throwing instead of leaking them into the log.
   if (ready.length > 1)
-    return { error: `${ready.length} new damage messages with a pinned target value: ${ready.map((m) => m.id)}` };
+    return {
+      error: `${ready.length} new damage messages with a pinned target value: ${ready.map((m) => m.id)}`,
+      ids: ready.map((m) => m.id),
+    };
   const message = ready[0];
   return {
     damageMessageId: message.id,
@@ -229,7 +232,7 @@ export const retargetVictimInPage = (victimTokenId) => {
 
 /**
  * Reads back whether the MODULE injected its damage buttons on a PINNED damage-message card
- * (renderChatMessageHTML → .damageButton in knight-damage.js:261-287) — the recording-time
+ * (renderChatMessageHTML → .damageButton in knight-damage.js:268-294) — the recording-time
  * proof that what we just recorded is a message the module acts on. Null (not []) while
  * injection is pending: an empty array is truthy and would satisfy a waitFor predicate before
  * the renderChatMessageHTML hook has run.
@@ -360,8 +363,9 @@ export function planPips(plan) {
 }
 
 // v14 stores ChatMessage.rolls as serialized JSON STRINGS but flags.knight.attaque as live
-// Roll OBJECTS inside the flag — accept both shapes (JSON.parse only on strings).
-function asRoll(entry) {
+// Roll OBJECTS inside the flag — accept both shapes (JSON.parse only on strings). Exported:
+// the unit fixture-contract pins import it (review-6 C2 — the third copy there deleted).
+export function asRoll(entry) {
   return typeof entry === 'string' ? JSON.parse(entry) : entry;
 }
 
@@ -441,5 +445,3 @@ export function checkTraitSpan(content, label, expectedValue) {
     failures.push(`trait span (${label}): extracted ${extracted} != pinned sub-roll total ${expectedValue}`);
   return failures;
 }
-
-export const FIXTURES_DIR = fileURLToPath(new URL('../fixtures', import.meta.url));

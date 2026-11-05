@@ -26,11 +26,14 @@ import {
   registeredHooks,
 } from './support/foundry-globals.mjs';
 import {
+  ATTACKER_UUID,
   VICTIM_UUID,
   knightSystem,
   registerAttacker,
   standardKnightMessageFixture,
 } from './support/knight-fixtures.mjs';
+
+/* global process */ // node trap swap in the hover CHARACTERIZATION pin (same pattern as the e2e entries)
 
 const TOKEN_UUID = 'Scene.scene-1.Token.token-def';
 const VEHICULE_UUID = 'Scene.scene-1.Token.token-def.Actor.actor-veh';
@@ -78,6 +81,38 @@ describe('init-hook statusEffects registration (knight-damage.js:18-73) — the 
       else globalThis.CONFIG = previousCONFIG;
     }
     expect(configStub.queries['knight-damage.addReminder']).toBeTypeOf('function');
+    // B3 (review-6): the COMPLETE ordered statusEffect row list — a row-id rename anywhere
+    // in the init block (e.g. 'anti-anatheme' -> anything) flips this exact list, and the
+    // three changeless rows are pinned byte-for-byte below (they used to be the only
+    // unpinned rows; smoke covers them LIVE only, never in CI).
+    expect(configStub.statusEffects.map((row) => row.id)).toEqual([
+      'anti-anatheme',
+      'folde',
+      'apply-guardian-cdf',
+      'shrine',
+      'shrine-ameliore',
+    ]);
+    expect(configStub.statusEffects[0]).toEqual({
+      id: 'anti-anatheme',
+      name: 'Anti-anathème',
+      label: 'Anti-anathème',
+      icon: 'icons/svg/explosion.svg',
+      img: 'icons/svg/explosion.svg',
+    });
+    expect(configStub.statusEffects[1]).toEqual({
+      id: 'folde',
+      name: 'Bloque folde',
+      label: 'Bloque folde',
+      icon: 'icons/svg/hazard.svg',
+      img: 'icons/svg/hazard.svg',
+    });
+    expect(configStub.statusEffects[2]).toEqual({
+      id: 'apply-guardian-cdf',
+      name: 'Applique Guardian Cdf',
+      label: 'Applique Guardian Cdf',
+      icon: 'icons/svg/holy-shield.svg',
+      img: 'icons/svg/holy-shield.svg',
+    });
     expect(configStub.statusEffects.find((row) => row.id === 'shrine')).toEqual({
       id: 'shrine',
       name: 'Shrine',
@@ -157,7 +192,194 @@ describe('antianatheme injection via the registered preUpdateChatMessage hook (k
   });
 });
 
-describe('createDamageObject dispatch (knight-damage.js:336-352: pure type switch, no side effects)', () => {
+// B1 (review-6): the addApplyDamageButton POSITIVE path — the five damage-button bindings
+// were previously driven only by the e2e layer (never in CI). The hook is the REAL
+// renderChatMessageHTML registration; the recorder chains prove the DOM wiring
+// (append/find/html-set) and hand back the bound { data, handler } pairs.
+describe('addApplyDamageButton via the registered renderChatMessageHTML hook (knight-damage.js:98-113 + 257-295)', () => {
+  async function runRenderHook(message) {
+    const renderHooks = registeredHooks('renderChatMessageHTML');
+    expect(renderHooks).toHaveLength(1);
+    const html = makeHtmlRecorder();
+    await renderHooks[0].fn(message, html);
+    return html;
+  }
+
+  function damageBinds(html) {
+    return html.onBindings().filter((b) => b.selector.startsWith('[data-action='));
+  }
+
+  it('POSITIVE: a pnj attack card (Dégâts marker + flags.knight, actor.type NOT knight) gets the full injection chain — the .knight-roll scaffold append, the .damageButton html("") reset, five per-button appends and five [data-action] click bindings with the EXACT { message, mult, target } bind data (Normal 1/false, Demi 0.5/false, Double 2/false, Espoir 1/espoir, Energie 1/energie)', async () => {
+    const message = makeKnightMessage({
+      weaponRaw: ['percearmure 40', 'penetrant 6'],
+      targets: [{ id: 'token-def', value: 60 }],
+    });
+    const html = await runRenderHook(message);
+
+    expect(html.calls).toContainEqual({
+      selector: '.knight-roll',
+      action: 'append',
+      content: '<div class="damageButton flexrow"><div>',
+    });
+    expect(html.calls).toContainEqual({ selector: '.damageButton', action: 'html', value: '' });
+
+    const expected = [
+      ['applyDamage', 'Normal', 1, false],
+      ['applyDamageHalf', 'Demi', 0.5, false],
+      ['applyDamageDouble', 'Double', 2, false],
+      ['applyDamageEspoir', 'Espoir', 1, 'espoir'],
+      ['applyDamageEnergie', 'Energie', 1, 'energie'],
+    ];
+    for (const [action, label, mult, target] of expected) {
+      expect(html.calls).toContainEqual({
+        selector: '.damageButton',
+        action: 'append',
+        content: `<button data-action="${action}">${label}</button>`,
+      });
+      const bindings = html.onBindings(`[data-action="${action}"]`);
+      expect(bindings).toHaveLength(1);
+      expect(bindings[0].event).toBe('click');
+      expect(bindings[0].data).toEqual({ message, mult, target });
+      expect(bindings[0].handler).toBeTypeOf('function');
+    }
+    expect(damageBinds(html)).toHaveLength(5);
+  });
+
+  it('NEGATIVE gate 1: content WITHOUT the Dégâts/Violence/Débordement marker -> zero injection (no scaffold append, no .damageButton writes, zero [data-action] bindings)', async () => {
+    const message = makeKnightMessage({
+      content: '<div class="knight-roll"><div>Réflexions</div></div>',
+      weaponRaw: ['percearmure 40', 'penetrant 6'],
+      targets: [{ id: 'token-def', value: 60 }],
+    });
+    const html = await runRenderHook(message);
+    expect(html.calls.filter((c) => c.action === 'append' || (c.action === 'html' && 'value' in c))).toEqual([]);
+    expect(damageBinds(html)).toHaveLength(0);
+  });
+
+  it("NEGATIVE gate 2: flags.knight.actor.type === 'knight' (PC-made attack) -> zero injection despite the Dégâts marker", async () => {
+    const message = makeKnightMessage({
+      initiatorType: 'knight',
+      weaponRaw: ['percearmure 40', 'penetrant 6'],
+      targets: [{ id: 'token-def', value: 60 }],
+    });
+    const html = await runRenderHook(message);
+    expect(html.calls.filter((c) => c.action === 'append' || (c.action === 'html' && 'value' in c))).toEqual([]);
+    expect(damageBinds(html)).toHaveLength(0);
+  });
+});
+
+// B2 (review-6): the isRecap hover wiring of the SAME hook (knight-damage.js:103-112).
+// canvas.ready is set PER TEST and restored (the shared canvas stub must stay untouched
+// for every other suite consumer — onHoverIn/onHoverOut are no-ops without it).
+describe('recap hover wiring via the registered renderChatMessageHTML hook (knight-damage.js:103-112)', () => {
+  function recapMessage({ initiatorTokenId = 'token-atk' } = {}) {
+    const message = makeKnightMessage({
+      content: '<div class="recap">Récapitulatif des dégâts</div>',
+      initiatorTokenId,
+    });
+    message.flags['knight-damage'] = { recap: {}, isRecap: true, origin: ATTACKER_UUID };
+    return message;
+  }
+
+  function makeHoverTokenSpy() {
+    const calls = [];
+    return {
+      calls,
+      object: {
+        isVisible: true,
+        controlled: false,
+        _onHoverIn: (event) => calls.push({ kind: 'in', event }),
+        _onHoverOut: (event) => calls.push({ kind: 'out', event }),
+      },
+    };
+  }
+
+  // Sets canvas.ready for the duration of fn and RESTORES the stub's original shape
+  // (ready was absent on the shared canvas stub).
+  async function withCanvasReady(ready, fn) {
+    const previous = globalThis.canvas.ready;
+    globalThis.canvas.ready = ready;
+    try {
+      await fn();
+    } finally {
+      if (previous === undefined) delete globalThis.canvas.ready;
+      else globalThis.canvas.ready = previous;
+    }
+  }
+
+  it('a NON-recap message binds NOTHING on the recorder root (the isRecap gate at knight-damage.js:103 sits before the hover wiring; the revert binding is NOT root-level)', async () => {
+    const message = makeKnightMessage({ weaponRaw: ['percearmure 40', 'penetrant 6'] });
+    const html = makeHtmlRecorder();
+    const renderHooks = registeredHooks('renderChatMessageHTML');
+    await renderHooks[0].fn(message, html);
+    expect(html.onBindings('<root>')).toHaveLength(0);
+  });
+
+  it('an isRecap message binds EXACTLY mouseenter + mouseleave on the ROOT; with canvas.ready the real handlers resolve the speaker token via fromUuidSync and drive token._onHoverIn/_onHoverOut; without canvas.ready BOTH stay silent no-ops', async () => {
+    registerUuid(ATTACKER_UUID, makeActor('vehicule', {}, { id: 'actor-veh' }));
+    const spy = makeHoverTokenSpy();
+    registerUuid(ATTACKER_UUID, { uuid: ATTACKER_UUID, object: spy.object });
+
+    const html = makeHtmlRecorder();
+    const renderHooks = registeredHooks('renderChatMessageHTML');
+    await renderHooks[0].fn(recapMessage(), html);
+
+    const rootBindings = html.onBindings('<root>');
+    expect(rootBindings.map((b) => b.event)).toEqual(['mouseenter', 'mouseleave']);
+
+    await withCanvasReady(true, async () => {
+      rootBindings[0].handler({ type: 'mouseenter' });
+      rootBindings[1].handler({ type: 'mouseleave' });
+    });
+    expect(spy.calls.map((c) => c.kind)).toEqual(['in', 'out']);
+    expect(spy.calls[0].event.type).toBe('mouseenter');
+    expect(spy.calls[1].event.type).toBe('mouseleave');
+
+    await withCanvasReady(false, async () => {
+      rootBindings[0].handler({ type: 'mouseenter' });
+      rootBindings[1].handler({ type: 'mouseleave' });
+    });
+    // canvas.ready false -> onHoverIn returns at its guard, onHoverOut short-circuits: NO extra calls.
+    expect(spy.calls).toHaveLength(2);
+  });
+
+  // CHARACTERIZATION (pin the current shape, do NOT endorse): onHoverOut (knight-damage.js:367-369)
+  // derefs token._onHoverOut UNGUARDED, and the hover wrapper (knight-damage.js:109-112) calls it
+  // WITHOUT await/return — an unresolvable speaker token therefore surfaces as a FLOATING unhandled
+  // rejection, never as a synchronous throw on the bound handler. The pin swaps the process
+  // unhandledRejection listeners for its own duration (saved + restored in finally, so the harness
+  // trap stays intact for every other test) and pins the rejection shape explicitly.
+  it('CHARACTERIZATION: isRecap card with an UNRESOLVABLE speaker token + canvas.ready — the mouseenter handler stays silent (token?.isVisible chain), and the mouseleave handler throws NOTHING synchronously while its un-awaited onHoverOut (knight-damage.js:368, unguarded token._onHoverOut deref) lands as exactly ONE floating unhandled TypeError', async () => {
+    const html = makeHtmlRecorder();
+    const renderHooks = registeredHooks('renderChatMessageHTML');
+    // 'token-gone' uuid deliberately NOT in the registry -> fromUuidSync yields undefined.
+    await renderHooks[0].fn(recapMessage({ initiatorTokenId: 'token-gone' }), html);
+    const rootBindings = html.onBindings('<root>');
+    expect(rootBindings).toHaveLength(2);
+
+    const savedListeners = process.listeners('unhandledRejection');
+    process.removeAllListeners('unhandledRejection');
+    const rejections = [];
+    const capture = (reason) => rejections.push(reason);
+    process.on('unhandledRejection', capture);
+    try {
+      await withCanvasReady(true, async () => {
+        expect(() => rootBindings[0].handler({ type: 'mouseenter' })).not.toThrow();
+        expect(() => rootBindings[1].handler({ type: 'mouseleave' })).not.toThrow();
+        // Macrotask boundary: the floating rejection is emitted once the microtask queue drains.
+        await new Promise((resolve) => setTimeout(resolve, 0));
+      });
+    } finally {
+      process.removeListener('unhandledRejection', capture);
+      for (const listener of savedListeners) process.on('unhandledRejection', listener);
+    }
+    expect(rejections).toHaveLength(1);
+    expect(rejections[0]).toBeInstanceOf(TypeError);
+    expect(String(rejections[0])).toContain('_onHoverOut');
+  });
+});
+
+describe('createDamageObject dispatch (knight-damage.js:343-360: pure type switch, no side effects)', () => {
   function victimToken(type, system) {
     const actor = makeActor(type, system, { id: 'actor-def', uuid: VICTIM_UUID });
     return makeToken(actor, { id: 'token-def' });
@@ -315,7 +537,7 @@ describe('handleClickRevertDamage via the registered renderChatMessageHTML hook 
   });
 });
 
-describe('death reminder card via the registered preCreateActiveEffect hook — generateReminderMessage format (knight-damage.js:120-151)', () => {
+describe('death reminder card via the registered preCreateActiveEffect hook — generateReminderMessage format (knight-damage.js:129-151)', () => {
   // The FLAGLESS death-card format (French header bytes, trunc(value/6) d6-restore lines, the
   // 0-value-key skip, the `_`->`.` uuid round-trip) is pinned ONLY by the e2e reminders suite,
   // which NEVER runs in CI — this pin closes that blind spot against the real registrations,

@@ -48,6 +48,17 @@ export const releaseAllTokensInPage = () => {
 };
 
 /**
+ * Page-function: clear the LOCAL user's TARGET set (review-6 D6, additive helper) —
+ * game.user.targets is a distinct set from the activeLayer's CONTROLLED tokens that
+ * releaseAllTokensInPage handles; the live-attack cases (case10 / the recorder) target the
+ * victim via setTarget and must not leak that selection into the next case or run.
+ */
+export const clearUserTargetsInPage = () => {
+  for (const token of Array.from(game.user.targets)) token.setTarget(false);
+  return game.user.targets.size;
+};
+
+/**
  * INTENDED (author) double-update witness: apply() ALWAYS issues exactly two actor.update calls
  * (damageBase.js:296+303) — counted live via a preUpdateActor listener. Idempotent per boot
  * (re-installing in the same page would double-count).
@@ -70,6 +81,17 @@ export const deleteItemsInPage = (actorId, itemIds) =>
     .get(actorId)
     .deleteEmbeddedDocuments('Item', itemIds)
     .then(() => itemIds.length);
+
+/**
+ * Page-function: an actor's embedded-state baseline (review-6 D3) — effect status rows +
+ * embedded item-id list. The damage suites capture this at boot and byte-compare at suite
+ * end (mirroring the Phase-6 end-checks): none of those suites grants the VICTIMS statuses
+ * or items, so a drift is cross-run poisoning.
+ */
+export const actorEmbeddedStateInPage = (actorId) => ({
+  effects: game.actors.get(actorId).effects.map((e) => Array.from(e.statuses)),
+  items: game.actors.get(actorId).items.map((i) => i.id),
+});
 
 /*
  * ── Actor-level `knight-damage` FLAG helpers (Phase 5, additive) ──

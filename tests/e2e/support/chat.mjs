@@ -112,6 +112,28 @@ export const degatsButtonOnCardInPage = (msgId) => {
 };
 
 /**
+ * Revert DOM probe against the PINNED recap card: line-through style landed on .recap AND the
+ * .revert-damage button is gone. waitFor PREDICATE CONTRACT (fw.waitFor returns on the FIRST
+ * truthy poll): null until BOTH hold, then only ever the all-true snapshot — returning a
+ * flags-false object would end the wait at the first poll and make the post-wait assertion the
+ * only gate. Hoisted verbatim (byte-identical triplicate: Phase-3 :189, Phase-4 :155, Phase-5
+ * :249 before the hoist — review-6 C1) from the three damage suites; every suite keeps a
+ * belt-on assertion above the predicate anyway.
+ */
+export const revertDomStateInPage = (msgId) => {
+  const card = Array.from(document.querySelectorAll('.chat-scroll li.chat-message')).find(
+    (li) => li.dataset.messageId === msgId,
+  );
+  if (!card) return null;
+  const recap = card.querySelector('.recap');
+  const revertBtn = card.querySelector('.revert-damage');
+  if (!recap) return null;
+  const lineThrough = /line-through/.test(recap.getAttribute('style') ?? '');
+  const revertButtonGone = revertBtn === null;
+  return lineThrough && revertButtonGone ? { lineThrough: true, revertButtonGone: true } : null;
+};
+
+/**
  * Page-function: the NEWEST message created after `excludeIds` was sampled that carries the
  * knight-damage recap flag — pinned discovery, never "last message". Multiple candidates are
  * surfaced as { error } (the damage flow must produce exactly one recap per application).

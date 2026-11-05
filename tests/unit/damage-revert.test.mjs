@@ -26,7 +26,7 @@ function makeRevertHtmlRecorder() {
 }
 
 // A recap message double carrying the flags revertDamage reads. isRecap: true
-// mirrors what generateRecapMessage writes (damageBase.js:337) — production
+// mirrors what generateRecapMessage writes (damageBase.js:339) — production
 // fidelity: the constructor then short-circuits the trait/perce parsing (the
 // revert path reads none of it, so every number below is unchanged).
 function makeRecapMessage({ recap, wear = 'normal', anatheme = false }) {
@@ -223,9 +223,9 @@ describe('DamageVehicule inherits DamageBase.revertDamage — the vehicule armur
   // armure recap comes from DamageVehicule.generateRecapMessage -> the base
   // template, so it carries BOTH the .revert-damage button and the
   // flags['knight-damage'] = {recap, isRecap, origin} the revert click needs
-  // (addRevertDamageEvent binds every .revert-damage, knight-damage.js:290-292;
+  // (addRevertDamageEvent binds every .revert-damage, knight-damage.js:297-299;
   // handleClickRevertDamage then rebuilds the damage object by ACTOR type,
-  // knight-damage.js:300 -> DamageVehicule, which inherits the base revert).
+  // knight-damage.js:301 -> DamageVehicule, which inherits the base revert).
   // The fixture therefore runs the REAL pipeline first (calculate +
   // generateRecapMessage on a 130-damage hit: /10 colosse -> 13 - 3 CdF = 10
   // absorbed by the 30 armure -> stored repartition {armure: 10, passenger: trunc(10/5)=2})
@@ -287,7 +287,7 @@ describe('DamageVehicule inherits DamageBase.revertDamage — the vehicule armur
     expect(html.selectorsUsed()).toEqual(['.recap', '.revert-damage', '.message-content']);
     expect(message.updates).toEqual([{ content: REVERTED_CONTENT }]);
 
-    // apply()'s update mapping (damageBase.js:271-303) has keys armure/blindage/
+    // apply()'s update mapping (damageBase.js:273-305) has keys armure/blindage/
     // armureGuardian/sante/cohesion/espoir — but NONE for 'passenger', so the
     // first payload carries only the restored armure; the second call repeats it
     // (INTENDED author double-update, no energie in this recap).

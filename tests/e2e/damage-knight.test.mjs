@@ -43,9 +43,12 @@ import {
   listMessageIdsInPage,
   messageContentInPage,
   messageFlagsInPage,
+  revertDomStateInPage,
   storedContentPersistedInPage,
 } from './support/chat.mjs';
 import {
+  actorEmbeddedStateInPage,
+  clearUserTargetsInPage,
   controlTokenInPage,
   deleteItemsInPage,
   installActorUpdateCounterInPage,
@@ -56,7 +59,7 @@ import {
   updateActorInPage,
 } from './support/actor-pages.mjs';
 import { replayFixture } from './support/replay.mjs';
-import { deepEqualJson, recapMapMatches } from './support/compare.mjs';
+import { deepEqualJson, entriesEqual, recapMapMatches } from './support/compare.mjs';
 import {
   ATTACKER_ACTOR_ID,
   ATTACK_DICE,
@@ -177,27 +180,31 @@ const newDamageMessageIdInPage = (excludeIds, targetTokenId) => {
     m.flags?.knight?.targets?.some((t) => t.id === targetTokenId && t.isValue === true && typeof t.value === 'number'),
   );
   if (ready.length === 0) return null;
-  if (ready.length > 1) return { error: `${ready.length} new damage messages: ${ready.map((m) => m.id)}` };
+  // { ids } on the anomaly (chat.mjs findNewRecapMessageInPage shape — review-6 D1): the CALLER
+  // sinks every candidate into its cleanup accumulator BEFORE throwing, so a multi-damage-message
+  // anomaly leaks zero cards into the boot-persistent chat log.
+  if (ready.length > 1)
+    return { error: `${ready.length} new damage messages: ${ready.map((m) => m.id)}`, ids: ready.map((m) => m.id) };
   return { id: ready[0].id };
 };
 
-// DOM probe for the revert case, against the PINNED recap card: line-through style landed on
-// .recap AND the .revert-damage button is gone. waitFor PREDICATE CONTRACT (fw.waitFor returns on
-// the FIRST truthy poll): null until BOTH hold, then only ever the all-true snapshot — returning a
-// flags-false object would end the wait at the first poll and make the post-wait assertion the only
-// gate. The assertion below stays a belt on top of this guard.
-const revertDomStateInPage = (msgId) => {
-  const card = Array.from(document.querySelectorAll('.chat-scroll li.chat-message')).find(
-    (li) => li.dataset.messageId === msgId,
-  );
-  if (!card) return null;
-  const recap = card.querySelector('.recap');
-  const revertBtn = card.querySelector('.revert-damage');
-  if (!recap) return null;
-  const lineThrough = /line-through/.test(recap.getAttribute('style') ?? '');
-  const revertButtonGone = revertBtn === null;
-  return lineThrough && revertButtonGone ? { lineThrough: true, revertButtonGone: true } : null;
-};
+// WIDENED leak scan (review-6 D2): the set of message ids carrying the ARRAY flag
+// flags.knight.targets — the marker distinguishing SYSTEM attack/damage cards from module
+// recap/death/side cards. Byte-verified against the committed fixture: the recorded DAMAGE
+// message carries flags.knight.targets[...] (system attack cards nest their targets under
+// flags.knight.content[].targets instead, so this scan pins exactly the damage-card family
+// this suite replays). A freshly seeded world boots with an EMPTY chat log (the seed carries
+// no messages collection at all), so this baseline is empty at start; the suite-end
+// self-check requires it UNCHANGED — the old isRecap-only scan could not see a leaked
+// replayed damage card.
+const attackCardIdsInPage = () =>
+  game.messages.contents
+    .filter((m) => Array.isArray(m.flags?.knight?.targets) && m.flags.knight.targets.length > 0)
+    .map((m) => m.id)
+    .sort()
+    .join(',');
+
+// DOM probe for the revert case: support/chat.mjs revertDomStateInPage (hoisted — review-6 C1).
 
 // ── Node-side test plumbing ──
 // The comparison helpers live in support/compare.mjs (shared by all damage suites).
@@ -286,15 +293,11 @@ async function main(Framework) {
   }
 
   async function victimMatchesSeedBaseline() {
-    // ORDER-INDEPENDENT comparison (entries loop, mirroring statsMatchInPage): SEED_STATS and
-    // readStatsInPage currently share key order, but a refactor reordering one side must never
-    // flip this self-check (review-5 B4).
+    // ORDER-INDEPENDENT comparison via entriesEqual from support/compare.mjs (review-6 D4 — the
+    // hand-rolled entries loop was a drift-prone duplicate; a refactor reordering either side
+    // must never flip this self-check, review-5 B4 rule).
     const now = await fw.executeInFoundry(readStatsInPage, VICTIM_ACTOR_ID);
-    const expected = Object.entries(SEED_STATS);
-    const actual = Object.entries(now ?? {});
-    const same =
-      actual.length === expected.length &&
-      expected.every(([key, value]) => actual.some(([k, v]) => k === key && v === value));
+    const same = entriesEqual(now, SEED_STATS);
     if (!same)
       console.log(
         `[damage] baseline expected ${JSON.stringify(SEED_STATS)}\n[damage] baseline actual   ${JSON.stringify(now)}`,
@@ -336,6 +339,11 @@ async function main(Framework) {
     if (swept) console.log(`[damage] start-sweep removed ${swept} leftover pinned weapon(s) from the attacker`);
     if (!(await victimMatchesSeedBaseline()))
       throw new Error('victim stats are NOT at the seed baseline at suite start — poisoning from a previous run');
+    const bootAttackCards = await fw.executeInFoundry(attackCardIdsInPage);
+    const bootVicEmbedded = await fw.executeInFoundry(actorEmbeddedStateInPage, VICTIM_ACTOR_ID);
+    console.log(
+      `[damage] start baseline: attack/damage cards (flags.knight.targets): [${bootAttackCards}] | victim effects+items: ${JSON.stringify(bootVicEmbedded)}`,
+    );
 
     const counterInstalled = await fw.executeInFoundry(installActorUpdateCounterInPage);
     console.log(`[damage] preUpdateActor counter: ${counterInstalled}`);
@@ -398,7 +406,7 @@ async function main(Framework) {
         recapId = recap.id;
         push(
           'case2: Normal apply -> armure 100->90, sante 20->18 (CdF eff 4 soaked, carry trunc(10/5)=2)',
-          deepEqualJson(stats, { ...SEED_STATS, armure: 90, sante: 18 }),
+          entriesEqual(stats, { ...SEED_STATS, armure: 90, sante: 18 }),
           `got ${JSON.stringify(stats)}`,
         );
         push(
@@ -477,13 +485,19 @@ async function main(Framework) {
       let doubleRecap;
       const recapIds = [];
       try {
-        demiMsg = await replay(standard.message);
-        // ceil(14*0.5)=7 -> -4 CdF = 3 -> armure 97; carry trunc(3/5)=0 -> sante 20.
+        // CEIL-DISCRIMINATING target (review-6 D7): the recorded 14 under mult 0.5 lands
+        // 7 either way (ceil(7)=trunc(7)=7 — no discrimination). Mutating the replay to 13
+        // makes Math.ceil(6.5)=7 vs the trunc mutant's 6: armure 97 / recap {armure:3,sante:0}
+        // vs 98 / {armure:2,sante:0}. The double sub-case below keeps the recorded 14 (x2 = 28).
+        demiMsg = await replay(standard.message, (m) => {
+          m.flags.knight.targets[0].value = 13;
+        });
+        // ceil(13*0.5)=7 -> -4 CdF = 3 -> armure 97; carry trunc(3/5)=0 -> sante 20.
         const demi = await applyDamageAndAwait(demiMsg, 'applyDamageHalf', { armure: 97, sante: 20 }, recapIds);
         demiRecap = demi.recapId;
         push(
-          'case3: Demi -> armure 97, sante 20 untouched (Math.ceil(7), carry trunc(3/5)=0)',
-          deepEqualJson(demi.stats, { ...SEED_STATS, armure: 97 }),
+          'case3: Demi target 13 -> Math.ceil(13*0.5)=7 (trunc mutant would land 6 -> armure 98) -> armure 97, sante 20 untouched (carry trunc(3/5)=0)',
+          entriesEqual(demi.stats, { ...SEED_STATS, armure: 97 }),
           `got ${JSON.stringify(demi.stats)}`,
         );
         push(
@@ -499,7 +513,15 @@ async function main(Framework) {
             !demiContent.includes('Santé :'),
           `content: ${demiContent}`,
         );
-        await cleanup([demiMsg, demiRecap, ...recapIds], snap);
+        // Mid-case baseline restore (review-6 D5): the file's own restoreBaselineBetween — the
+        // old cleanup() wrapped the restore in an UNAWAITED .catch, so the Double sub-apply
+        // could start while the victim stats were still draining. Sink the Demi ids FIRST, then
+        // restore and WAIT for the seed stats before the next replay.
+        await fw
+          .executeInFoundry(deleteMessagesInPage, [demiMsg, demiRecap, ...recapIds].filter(Boolean))
+          .catch((err) => console.log(`[damage] case3 mid-case message-delete FAILED: ${err.message ?? err}`));
+        recapIds.length = 0;
+        await restoreBaselineBetween(snap);
 
         doubleMsg = await replay(standard.message);
         // ceil(14*2)=28 -> -4 = 24 -> armure 76; carry trunc(24/5)=4 -> sante 16.
@@ -507,7 +529,7 @@ async function main(Framework) {
         doubleRecap = dbl.recapId;
         push(
           'case3: Double -> armure 76, sante 16',
-          deepEqualJson(dbl.stats, { ...SEED_STATS, armure: 76, sante: 16 }),
+          entriesEqual(dbl.stats, { ...SEED_STATS, armure: 76, sante: 16 }),
           `got ${JSON.stringify(dbl.stats)}`,
         );
         push(
@@ -536,7 +558,7 @@ async function main(Framework) {
         const inert = await applyDamageAndAwait(inertMsg, 'applyDamage', SEED_STATS, recapIds);
         push(
           'case4: CdF>=damage (value 4) -> stats byte-identical to seed (no armure/CdF write at all)',
-          deepEqualJson(inert.stats, SEED_STATS),
+          entriesEqual(inert.stats, SEED_STATS),
           `got ${JSON.stringify(inert.stats)}`,
         );
         push(
@@ -841,7 +863,7 @@ async function main(Framework) {
         const restored = await fw.waitFor(statsMatchInPage, 15000, VICTIM_ACTOR_ID, SEED_STATS);
         push(
           'case9: revert restores ALL stats to the seed values (armure 100, sante 20, CdF/egide/energie untouched)',
-          deepEqualJson(restored, SEED_STATS),
+          entriesEqual(restored, SEED_STATS),
           `got ${JSON.stringify(restored)}`,
         );
 
@@ -924,6 +946,7 @@ async function main(Framework) {
 
         const preIds = await fw.executeInFoundry(listMessageIdsInPage);
         const damage = await fw.waitFor(newDamageMessageIdInPage, 15000, preIds, VICTIM_TOKEN_ID);
+        if (damage?.ids) createdMessages.push(...damage.ids); // multi-message anomaly: sink BEFORE throwing
         if (!damage || damage.error)
           throw new Error(`live damage message discovery failed: ${damage?.error ?? 'timeout'}`);
         createdMessages.push(damage.id);
@@ -951,6 +974,9 @@ async function main(Framework) {
         await fw
           .executeInFoundry(toggleAttackerStatusInPage, ATTACKER_ACTOR_ID, ANTI_ANATHEME_STATUS_ID, false)
           .catch(() => {});
+        // Review-6 D6: the live attack left the victim token TARGETED (game.user.targets) —
+        // releaseAllTokensInPage never clears that set, so clear it here too.
+        await fw.executeInFoundry(clearUserTargetsInPage).catch(() => {});
         if (itemId) await fw.executeInFoundry(deleteItemsInPage, ATTACKER_ACTOR_ID, [itemId]).catch(() => {});
         await fw.executeInFoundry(updateActorInPage, ATTACKER_ACTOR_ID, { system: atkSnap }).catch(() => {});
         if (createdMessages.length)
@@ -992,6 +1018,21 @@ async function main(Framework) {
       'poisoning self-check: NO knight-damage recap message survives in the (boot-persistent) chat log',
       recapLeak.length === 0,
       `leftover recap ids: ${JSON.stringify(recapLeak)}`,
+    );
+    // Review-6 D2: the leak scan WIDENS to the system attack/damage card family — every replayed
+    // fixture card carries flags.knight.targets and MUST have been deleted by its case's cleanup.
+    const endAttackCards = await fw.executeInFoundry(attackCardIdsInPage);
+    push(
+      'poisoning self-check: the set of flags.knight.targets attack/damage card ids is UNCHANGED from the boot baseline (no leaked fixture replay card; freshly seeded boot baseline is empty)',
+      endAttackCards === bootAttackCards,
+      `boot [${bootAttackCards}] -> end [${endAttackCards}]`,
+    );
+    const endVicEmbedded = await fw.executeInFoundry(actorEmbeddedStateInPage, VICTIM_ACTOR_ID);
+    push(
+      'poisoning self-check: victim vic-knight embedded effects (status rows) AND item-id list identical to the boot baseline (no stray statuses/items from this suite)',
+      deepEqualJson(endVicEmbedded.effects, bootVicEmbedded.effects) &&
+        deepEqualJson(endVicEmbedded.items, bootVicEmbedded.items),
+      `boot ${JSON.stringify(bootVicEmbedded)} -> end ${JSON.stringify(endVicEmbedded)}`,
     );
 
     // ───────────────────────── summary ─────────────────────────

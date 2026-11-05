@@ -519,6 +519,18 @@ describe('calculateDamageStatWithColosse / isColosseApplied', () => {
     expect(dmg.damage).toBe(6);
   });
 
+  // CHARACTERIZATION: the `|| this.actor.type == 'vehicule'` RESCUE clause at
+  // damageBase.js:183 is schema-unreachable live — the knight vehicule template has
+  // NO resilience field at all (docs/testing-plan.md Phase-4 finding 1: the live seed
+  // vehicule row carries no resilience key), so a vehicule can never actually store
+  // resilience.value 0 in a v14 world. The pin still defends the oracle: deleting the
+  // rescue clause flips the first term alone (0 !== 0 -> false) and the /10 never runs.
+  it('CHARACTERIZATION (clause schema-unreachable live): a vehicule STORED with resilience.value 0 still gets colosse via the type-rescue half of the OR at damageBase.js:183 — isColosseApplied true, 65 -> 6 (rescue deleted: the resilience term alone is false at value 0 -> damage stays 65)', () => {
+    const dmg = colosseFixture({ actorType: 'vehicule', system: { resilience: { value: 0 } } });
+    expect(dmg.isColosseApplied()).toBe(true);
+    expect(dmg.damage).toBe(6);
+  });
+
   it('INTENDED (author): an actor WITHOUT a resilience stat has colosse on (undefined !== 0)', () => {
     const dmg = colosseFixture({ actorType: 'mechaarmure' });
     expect(dmg.isColosseApplied()).toBe(true);

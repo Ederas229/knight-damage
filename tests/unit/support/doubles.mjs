@@ -161,7 +161,25 @@ export function makeHtmlRecorder({ html = {} } = {}) {
       calls.push({ selector, action: 'prepend', content });
       return this;
     },
-    html() {
+    // addApplyDamageButton (knight-damage.js:268-294) chains find(...).append(...)
+    // — the content is recorded verbatim, same discipline as prepend above.
+    append(content) {
+      calls.push({ selector, action: 'append', content });
+      return this;
+    },
+    // jQuery re-queries from the chain element; the recorder re-enters chainFor with
+    // the QUERIED selector (the chain object itself stays intact for further chaining).
+    find(findSelector) {
+      calls.push({ selector, action: 'find', findSelector });
+      return chainFor(findSelector);
+    },
+    html(...args) {
+      // jQuery html(value) is the SETTER form (addApplyDamageButton resets the fresh
+      // .damageButton with .html('')); zero-arg html() keeps the getter contract above.
+      if (args.length > 0) {
+        calls.push({ selector, action: 'html', value: args[0] });
+        return this;
+      }
       calls.push({ selector, action: 'html' });
       if (!(selector in canned)) {
         throw new Error(`makeHtmlRecorder: no canned html() value for selector "${selector}"`);

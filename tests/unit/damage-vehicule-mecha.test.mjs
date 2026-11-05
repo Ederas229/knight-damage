@@ -87,6 +87,51 @@ describe('vehicule', () => {
     expect(actor.updates).toEqual([]);
   });
 
+  it('gate 1 EXACT boundary: trunc(30/10) - CdF 3 == 0 blocks the strict `> 0` — destructeur is NOT applied and the CdF subtraction zeroes the /10 damage (empty repartition); relaxing the gate to `>= 0` would add +12 BEFORE the division: 42 -> /10 -> 4, -3 -> 1 -> {armure: 1, passenger: 0}', () => {
+    // damageVehicule.js:19 is the `Math.trunc(this.damage / 10) - this.effectiveStats.cdf > 0`
+    // boundary: the 30/3 fixture lands the subtraction on EXACTLY 0 — on the true side of a
+    // `>= 0` mutant, applyDamageTrait fires first (30 + 12 = 42), the colosse division yields
+    // trunc(42/10) = 7, minus CdF 3 -> 1 absorbed by the 30 armor -> {armure: 1, passenger:
+    // trunc(1/5) = 0}. Every number below discriminates the two sides.
+    const { damage, actor } = vehiculeFixture({
+      weaponRaw: ['destructeur'],
+      content: traitSpan('Destructeur', 12),
+      targetValue: 30,
+    });
+    damage.calculate();
+    expect(damage.damageTraits.destructeur).toEqual({ bool: true, result: 12 });
+    expect(damage.damageRepartition).toEqual({});
+    expect(damage.actorStats.armure).toBe(30);
+    expect(actor.updates).toEqual([]);
+  });
+
+  it('energie target + destructeur: the gate-1 `!this.energie` clause blocks the pre-division bonus — 60 -> /10 -> 6, -3 CdF -> 3 absorbed by the 12 energie (9 left), {energie: 3} (clause deleted: 60+12=72 -> /10 -> 7, -3 -> 4 -> {energie: 4}, energie 8)', () => {
+    const { damage } = vehiculeFixture({
+      weaponRaw: ['destructeur'],
+      content: traitSpan('Destructeur', 12),
+      targetValue: 60,
+      targetStat: 'energie',
+    });
+    damage.calculate();
+    expect(damage.damageTraits.destructeur).toEqual({ bool: true, result: 12 });
+    expect(damage.damageRepartition).toEqual({ energie: 3 });
+    expect(damage.actorStats.energie).toBe(9);
+  });
+
+  it('CHARACTERIZATION — gate 2 (damageVehicule.js:32) `!this.energie` clause + antivehicule energie path: gate 2 is DEAD for a colosse-on vehicule (its `!isColosseApplied()` half is always false), so this clause is only reachable with raw antivehicule — there it blocks the POST-division bonus on the energie track: 10 - 3 CdF = 7 lands unsaturated on the 12 energie ({energie: 7}, energie 5); clause deleted the +12 applies first: 19 >= 12 caps the absorb ({energie: 12}, energie 0)', () => {
+    const { damage } = vehiculeFixture({
+      weaponRaw: ['antivehicule', 'destructeur'],
+      content: traitSpan('Destructeur', 12),
+      targetValue: 10,
+      targetStat: 'energie',
+    });
+    damage.calculate();
+    expect(damage.isColosseApplied()).toBe(false);
+    expect(damage.damageTraits.destructeur).toEqual({ bool: true, result: 12 });
+    expect(damage.damageRepartition).toEqual({ energie: 7 });
+    expect(damage.actorStats.energie).toBe(5);
+  });
+
   it('REGRESSION 0f244f0: antivehicule vs vehicule with armor — gate 1 is false but gate 2 (armure > 0 && !isColosseApplied()) applies destructeur exactly once', () => {
     // No /10 with antivehicule: 600 - 3 CdF = 597, +12 destructeur = 609,
     // absorbed by the 610 armor -> 1 left. Double application (621) would
