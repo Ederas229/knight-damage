@@ -117,6 +117,7 @@
 import config from './config.mjs';
 import { loadFramework, respawnPreservingSymlinks } from './support/framework.mjs';
 import { acquireSpawnMutex } from './support/spawn-lock.mjs';
+import { installQuietConsole, terminalLine } from './support/quiet-console.mjs';
 import { loadRecordedFixture, STANDARD_FIXTURE_NAME } from './support/fixture-store.mjs';
 import {
   clickOnMessageCard,
@@ -284,6 +285,11 @@ const wearGuardianInPage = (actorId) =>
 
 async function main(Framework) {
   acquireSpawnMutex(); // ownership before ANYTHING (see support/spawn-lock.mjs)
+  // Quiet-terminal policy (support/quiet-console.mjs): all framework/probe/dump logging (including
+  // push's live PASS/FAIL lines) goes to test-data/e2e-logs/hooks-sheets.log; the terminal shows
+  // one PASS/FAIL verdict per case (emitted by runCase), one for the self-check block, and the
+  // final E2E summary line. KDT_E2E_VERBOSE=1 restores the full live terminal.
+  installQuietConsole({ testDataPath: config.testDataPath, name: 'hooks-sheets' });
   const fw = new Framework(config);
   const results = [];
   const push = (label, ok, detail = '') => {
@@ -486,7 +492,23 @@ async function main(Framework) {
 
   // Snapshot -> body -> cleanup, with cleanup ALWAYS running (even after a case throw) and its
   // own failures recorded separately.
+  // Quiet-terminal verdict: one line per case (+ each failed assertion on FAIL); push's live
+  // PASS/FAIL lines stay in the detail log. `coveredThrough` marks case-attributed assertions.
+  let coveredThrough = 0;
+  const reportVerdict = (name, resultsStart) => {
+    const caseResults = results.slice(resultsStart);
+    const failed = caseResults.filter((r) => !r.ok);
+    terminalLine(
+      failed.length === 0
+        ? `PASS  ${name} (${caseResults.length} assertions)`
+        : `FAIL  ${name} (${failed.length}/${caseResults.length} assertions failed)`,
+    );
+    for (const f of failed)
+      terminalLine(`      FAIL  ${f.label}${f.detail ? ` — ${String(f.detail).split('\n')[0]}` : ''}`);
+    coveredThrough = results.length;
+  };
   async function runCase(name, fn) {
+    const resultsStart = results.length;
     const ctx = { msgIds: [], effectIds: [], itemIds: [], _baselineEffectIds: [] };
     let baseline = null;
     try {
@@ -520,6 +542,7 @@ async function main(Framework) {
       caseFailures.push(`${name}-cleanup: ${err.message ?? err}`);
       push(`${name} cleanup restores the seed state`, false, `threw: ${err.stack ?? err}`);
     }
+    reportVerdict(name, resultsStart);
   }
 
   try {
@@ -1252,6 +1275,7 @@ async function main(Framework) {
     });
 
     // ─────────────── world-restoration self-checks ───────────────
+    const checksStart = results.length; // quiet-terminal verdict boundary (reportVerdict below)
     const endSystems = [];
     for (const id of FOUR_IDS) endSystems.push(await fw.executeInFoundry(snapshotActorSystemInPage, id));
     const systemDiffs = endSystems.map((s, i) => jsonDiffPaths(bootSystems[i], s));
@@ -1300,12 +1324,13 @@ async function main(Framework) {
       hookErrors.length === 0,
     );
 
+    if (checksStart > coveredThrough) reportVerdict('unattributed assertions', coveredThrough);
+    reportVerdict('self-checks', checksStart);
     const failed = results.filter((r) => !r.ok);
-    console.log('');
     if (failed.length === 0 && caseFailures.length === 0) {
-      console.log(`E2E HOOKS/SHEETS: PASS (${results.length}/${results.length} assertions)`);
+      terminalLine(`\nE2E HOOKS/SHEETS: PASS (${results.length}/${results.length} assertions)`);
     } else {
-      console.log(
+      terminalLine(
         `\nE2E HOOKS/SHEETS: FAIL (${failed.length}/${results.length} assertions failed${caseFailures.length ? `; case errors: ${caseFailures.join(' | ')}` : ''})`,
       );
       process.exitCode = 1;

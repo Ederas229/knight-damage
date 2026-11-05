@@ -138,6 +138,12 @@ Notes:
 - The Foundry server's own log chatter is redirected to
   `test-data/server.log` (overwritten per boot) instead of flooding the
   terminal; set `KDT_E2E_SERVER_LOG=1` to stream it live again.
+- The suites' terminal output is likewise quiet by default: each suite prints
+  one PASS/FAIL verdict per case (plus the failed assertions when a case
+  fails) and the final summary; the full verbatim log — framework progress,
+  probes, per-assertion lines — goes to
+  `test-data/e2e-logs/<suite>.log` (overwritten per run). Set
+  `KDT_E2E_VERBOSE=1` to stream everything live again.
 
 See `docs/testing-plan.md` for the full testing plan, live-behavior findings,
 and known gotchas, and `AGENTS.md` for per-suite details.

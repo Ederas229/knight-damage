@@ -34,6 +34,7 @@
 import config from './config.mjs';
 import { loadFramework, respawnPreservingSymlinks } from './support/framework.mjs';
 import { acquireSpawnMutex } from './support/spawn-lock.mjs';
+import { installQuietConsole, terminalLine } from './support/quiet-console.mjs';
 import { loadRecordedFixture, STANDARD_FIXTURE_NAME } from './support/fixture-store.mjs';
 import {
   clickOnMessageCard,
@@ -179,6 +180,11 @@ const readAtkStatsInPage = () => {
 
 async function main(Framework) {
   acquireSpawnMutex(); // ownership before ANYTHING (see support/spawn-lock.mjs)
+  // Quiet-terminal policy (support/quiet-console.mjs): all framework/probe/dump logging goes to
+  // test-data/e2e-logs/vehicule-mecha.log; the terminal shows one PASS/FAIL verdict per case
+  // (emitted by runCase), one for the self-check block, and the final E2E summary line.
+  // KDT_E2E_VERBOSE=1 restores the full live terminal.
+  installQuietConsole({ testDataPath: config.testDataPath, name: 'vehicule-mecha' });
   const fw = new Framework(config);
   const results = [];
   const push = (label, ok, detail = '') => results.push({ label, ok, detail });
@@ -193,7 +199,23 @@ async function main(Framework) {
   };
 
   const caseFailures = [];
+  // Quiet-terminal verdict: one line per case (+ each failed assertion on FAIL), computed from
+  // the results entries this case contributed. `coveredThrough` marks case-attributed assertions.
+  let coveredThrough = 0;
+  const reportVerdict = (name, resultsStart) => {
+    const caseResults = results.slice(resultsStart);
+    const failed = caseResults.filter((r) => !r.ok);
+    terminalLine(
+      failed.length === 0
+        ? `PASS  ${name} (${caseResults.length} assertions)`
+        : `FAIL  ${name} (${failed.length}/${caseResults.length} assertions failed)`,
+    );
+    for (const f of failed)
+      terminalLine(`      FAIL  ${f.label}${f.detail ? ` — ${String(f.detail).split('\n')[0]}` : ''}`);
+    coveredThrough = results.length;
+  };
   async function runCase(name, fn) {
+    const resultsStart = results.length;
     try {
       await fn();
     } catch (err) {
@@ -201,6 +223,7 @@ async function main(Framework) {
       await shot(`vehicule-mecha-${name}`);
       push(`${name} completes without infrastructure error`, false, `threw: ${err.stack ?? err}`);
     }
+    reportVerdict(name, resultsStart);
   }
 
   // Replay with a node-side mutation hook, then wait for the PINNED card. The VICTIM TOKEN is
@@ -733,6 +756,7 @@ async function main(Framework) {
 
     // ───────────────────────── world-restoration self-checks ─────────────────────────
 
+    const checksStart = results.length; // quiet-terminal verdict boundary (reportVerdict below)
     push(
       'poisoning self-check: vehicule stats byte-identical to the seed baseline at suite end',
       await matchBaseline(VEH_ACTOR_ID, SEED_STATS_VEH),
@@ -771,13 +795,17 @@ async function main(Framework) {
     for (const { label, ok, detail } of results) {
       console.log(`${ok ? 'PASS' : 'FAIL'}  ${label}${ok ? '' : ` — ${detail}`}`);
     }
+    // Quiet-terminal: verdict for the self-check block (and, defensively, for any assertion that
+    // lived outside a runCase). The per-assertion lines above stay in the detail log only.
+    if (checksStart > coveredThrough) reportVerdict('unattributed assertions', coveredThrough);
+    reportVerdict('self-checks', checksStart);
     const failures = results.filter((r) => !r.ok).length;
     if (failures > 0) {
-      console.log(
+      terminalLine(
         `\nE2E VEHICULE-MECHA: FAIL (${failures}/${results.length} assertions failed${caseFailures.length ? `; case errors: ${caseFailures.join(' | ')}` : ''})`,
       );
     } else {
-      console.log(`\nE2E VEHICULE-MECHA: PASS (${results.length}/${results.length} assertions)`);
+      terminalLine(`\nE2E VEHICULE-MECHA: PASS (${results.length}/${results.length} assertions)`);
     }
     process.exitCode = failures > 0 ? 1 : 0;
   } catch (err) {

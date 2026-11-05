@@ -11,6 +11,7 @@
 import config from './config.mjs';
 import { loadFramework, respawnPreservingSymlinks } from './support/framework.mjs';
 import { acquireSpawnMutex } from './support/spawn-lock.mjs';
+import { installQuietConsole, terminalLine } from './support/quiet-console.mjs';
 
 /* global process */
 
@@ -29,6 +30,11 @@ if (respawnPreservingSymlinks()) {
 
 async function main(Framework) {
   acquireSpawnMutex(); // ownership before ANYTHING (see support/spawn-lock.mjs)
+  // Quiet-terminal policy (support/quiet-console.mjs): framework/progress logging goes to
+  // test-data/e2e-logs/smoke.log; the terminal keeps only the PASS/FAIL assertion lines and the
+  // E2E summary (this suite is a single case - the 3 assertions ARE the case state).
+  // KDT_E2E_VERBOSE=1 restores the full live terminal.
+  installQuietConsole({ testDataPath: config.testDataPath, name: 'smoke' });
   const fw = new Framework(config);
   const results = [];
 
@@ -58,17 +64,17 @@ async function main(Framework) {
     ]);
 
     for (const [label, ok, detail] of results) {
-      console.log(`${ok ? 'PASS' : 'FAIL'}  ${label}${ok ? '' : ` — ${detail}`}`);
+      terminalLine(`${ok ? 'PASS' : 'FAIL'}  ${label}${ok ? '' : ` — ${detail}`}`);
     }
 
     const failures = results.filter(([, ok]) => !ok).length;
     if (failures > 0) {
       await fw.screenshot('smoke-failure.png').catch(() => {});
-      console.log(
+      terminalLine(
         `\nE2E SMOKE: FAIL (${failures}/${results.length} assertions failed; screenshot in test-data/screenshots/)`,
       );
     } else {
-      console.log(`\nE2E SMOKE: PASS (${results.length}/${results.length} assertions)`);
+      terminalLine(`\nE2E SMOKE: PASS (${results.length}/${results.length} assertions)`);
     }
     process.exitCode = failures > 0 ? 1 : 0;
   } catch (err) {

@@ -15,6 +15,7 @@
 import config from './config.mjs';
 import { loadFramework, respawnPreservingSymlinks } from './support/framework.mjs';
 import { acquireSpawnMutex } from './support/spawn-lock.mjs';
+import { installQuietConsole, terminalLine } from './support/quiet-console.mjs';
 import { loadRecordedFixture, STANDARD_FIXTURE_NAME } from './support/fixture-store.mjs';
 import { deleteMessagesInPage } from './support/chat.mjs';
 
@@ -52,6 +53,11 @@ const MODULE_REGEXES = [
 
 async function main(Framework) {
   acquireSpawnMutex(); // ownership before ANYTHING (see support/spawn-lock.mjs)
+  // Quiet-terminal policy (support/quiet-console.mjs): framework/progress/probe logging goes to
+  // test-data/e2e-logs/fixtures.log; the terminal keeps only the PASS/FAIL assertion lines and the
+  // E2E summary (this suite is a single case - its assertions ARE the case state).
+  // KDT_E2E_VERBOSE=1 restores the full live terminal.
+  installQuietConsole({ testDataPath: config.testDataPath, name: 'fixtures' });
   const fw = new Framework(config);
   const results = [];
   // Review-6 C3: the replay card must not leak into the boot-persistent chat log — this suite
@@ -189,17 +195,17 @@ async function main(Framework) {
     ]);
 
     for (const [label, ok, detail] of results) {
-      console.log(`${ok ? 'PASS' : 'FAIL'}  ${label}${ok ? '' : ` — ${detail}`}`);
+      terminalLine(`${ok ? 'PASS' : 'FAIL'}  ${label}${ok ? '' : ` — ${detail}`}`);
     }
 
     const failures = results.filter(([, ok]) => !ok).length;
     if (failures > 0) {
       await fw.screenshot('fixtures-failure.png').catch(() => {});
-      console.log(
+      terminalLine(
         `\nE2E FIXTURES: FAIL (${failures}/${results.length} assertions failed; screenshot in test-data/screenshots/)`,
       );
     } else {
-      console.log(
+      terminalLine(
         `\nE2E FIXTURES: PASS (${results.length}/${results.length} assertions, replayWithRolls=${replayedWithRolls})`,
       );
     }
