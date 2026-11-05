@@ -35,6 +35,7 @@
     "test:e2e:vehicule-mecha": "node tests/e2e/damage-vehicule-mecha.test.mjs",
     "test:e2e:reminders": "node tests/e2e/damage-reminders.test.mjs",
     "test:e2e:hooks-sheets": "node tests/e2e/hooks-sheets.test.mjs",
+    "test:e2e:all": "npm run test:e2e:fixtures && npm run test:e2e && npm run test:e2e:damage && npm run test:e2e:vehicule-mecha && npm run test:e2e:reminders && npm run test:e2e:hooks-sheets",
     "format": "prettier --write \"./**/*.(js|cjs|mjs|json|yml|css)\"",
     "prepare": "husky"
   },
