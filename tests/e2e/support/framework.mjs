@@ -27,7 +27,7 @@
 // start() — our override copies the same pattern so the issue batch sees it unchanged.
 
 import { spawn } from 'node:child_process';
-import { rmSync } from 'node:fs';
+import { createWriteStream, rmSync } from 'node:fs';
 import net from 'node:net';
 import path from 'node:path';
 
@@ -102,12 +102,27 @@ export async function loadFramework() {
       args.push('--noipdiscovery=true');
 
       console.log(`[foundryvtt-test-framework] Starting Foundry server on port ${port}...`);
+      // Server-log policy: the raw Foundry boot chatter (~1k lines/run) is REDIRECTED to
+      // test-data/server.log (truncated per boot, gitignored) instead of flooding the terminal.
+      // Set KDT_E2E_SERVER_LOG=1 to stream it live ([foundry]-prefixed) again. Our own suite
+      // output (PASS/FAIL lines, PROBE dumps, pageerror echoes) is never affected.
+      let serverLog = null;
+      if (!process.env.KDT_E2E_SERVER_LOG) {
+        serverLog = createWriteStream(path.join(testDataPath, 'server.log'));
+        console.log(
+          `[foundryvtt-test-framework] Foundry server log redirected to ${path.join(testDataPath, 'server.log')} (set KDT_E2E_SERVER_LOG=1 to stream it live).`,
+        );
+      }
       this.serverProcess = spawn('node', args, {
         cwd: foundryNodePath,
         stdio: ['ignore', 'pipe', 'pipe'],
       });
-      this.serverProcess.stdout.on('data', (d) => process.stdout.write(`[foundry] ${d}`));
-      this.serverProcess.stderr.on('data', (d) => process.stderr.write(`[foundry] ${d}`));
+      this.serverProcess.stdout.on('data', (d) =>
+        serverLog ? serverLog.write(d) : process.stdout.write(`[foundry] ${d}`),
+      );
+      this.serverProcess.stderr.on('data', (d) =>
+        serverLog ? serverLog.write(d) : process.stderr.write(`[foundry] ${d}`),
+      );
       this.serverProcess.on('error', (err) => {
         throw new Error(`Foundry server failed to start: ${err.message}`);
       });

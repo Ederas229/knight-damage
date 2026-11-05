@@ -135,6 +135,9 @@ Notes:
   `npm run setup:e2e && npm run record:e2e`.
 - The committed test world seed lives under `tests/e2e/world-seed/`; the
   world copy inside `test-data/` is disposable.
+- The Foundry server's own log chatter is redirected to
+  `test-data/server.log` (overwritten per boot) instead of flooding the
+  terminal; set `KDT_E2E_SERVER_LOG=1` to stream it live again.
 
 See `docs/testing-plan.md` for the full testing plan, live-behavior findings,
 and known gotchas, and `AGENTS.md` for per-suite details.
