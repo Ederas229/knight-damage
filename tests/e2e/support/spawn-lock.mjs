@@ -8,7 +8,9 @@
 //
 // Placement: repo root (`<repo>/.e2e-spawn.lock/`, git-ignored). Each worktree owns its own
 // test-data/ and chrome profile, so the mutex only needs to serialize runs of the SAME worktree;
-// the shared sibling clone (FoundryVTT-Node + dice extension) is read-only to e2e runs.
+// the machine-local Foundry server copy (config.foundryNodePath, outside node_modules) is
+// read-only to e2e runs. Concurrent DIFFERENT checkouts contend on the shared server port — the
+// _spawnServer port gate surfaces that as a loud 15 s timeout (run e2e from one checkout at a time).
 //
 // Liveness protocol (review 2, findings B-1/B-2):
 // - The owner writes its PID into <mutex>/pid.

@@ -30,7 +30,7 @@
 //     reproduce the unit suite's INTENDED (author) behaviors (double update; armor-bypass drop).
 
 import config from './config.mjs';
-import { loadFramework, respawnPreservingSymlinks } from './support/framework.mjs';
+import { loadFramework } from './support/framework.mjs';
 import { acquireSpawnMutex } from './support/spawn-lock.mjs';
 import { installQuietConsole, terminalLine } from './support/quiet-console.mjs';
 import { loadRecordedFixture, STANDARD_FIXTURE_NAME, TRAIT_FIXTURE_NAME } from './support/fixture-store.mjs';
@@ -76,15 +76,11 @@ import {
 
 /* global process */
 
-if (respawnPreservingSymlinks()) {
-  // Parent: the symlink-preserving child inherited stdio and carries the run.
-} else {
-  const Framework = await loadFramework();
-  main(Framework).catch((err) => {
-    console.error(`\nE2E DAMAGE FAIL: ${err.stack ?? err.message}`);
-    process.exitCode = 1;
-  });
-}
+const Framework = await loadFramework();
+main(Framework).catch((err) => {
+  console.error(`\nE2E DAMAGE FAIL: ${err.stack ?? err.message}`);
+  process.exitCode = 1;
+});
 
 const VICTIM_ACTOR_ID = 'kdtVicKnightAAAA';
 const ANTI_ANATHEME_STATUS_ID = 'anti-anatheme';

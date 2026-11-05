@@ -13,7 +13,7 @@
 // `npm run record:e2e` at least once — the JSON fixtures are committed, so this normally just works).
 
 import config from './config.mjs';
-import { loadFramework, respawnPreservingSymlinks } from './support/framework.mjs';
+import { loadFramework } from './support/framework.mjs';
 import { acquireSpawnMutex } from './support/spawn-lock.mjs';
 import { installQuietConsole, terminalLine } from './support/quiet-console.mjs';
 import { loadRecordedFixture, STANDARD_FIXTURE_NAME } from './support/fixture-store.mjs';
@@ -21,15 +21,11 @@ import { deleteMessagesInPage } from './support/chat.mjs';
 
 /* global process */
 
-if (respawnPreservingSymlinks()) {
-  // Parent: the symlink-preserving child inherited stdio and carries the run.
-} else {
-  const Framework = await loadFramework();
-  main(Framework).catch((err) => {
-    console.error(`\nE2E FIXTURES FAIL: ${err.stack ?? err.message}`);
-    process.exitCode = 1;
-  });
-}
+const Framework = await loadFramework();
+main(Framework).catch((err) => {
+  console.error(`\nE2E FIXTURES FAIL: ${err.stack ?? err.message}`);
+  process.exitCode = 1;
+});
 
 // Regex sources copied from the module's own code (keep in sync with src/ — this file asserts
 // the RECORDED fixture satisfies them, it does not re-derive them):

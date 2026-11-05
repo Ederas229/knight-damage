@@ -5,28 +5,23 @@
 //   3. CONFIG.queries['knight-damage.addReminder'] is registered.
 //
 // Run with `npm run test:e2e` AFTER `npm run prepare:e2e && npm run setup:e2e`.
-// The --preserve-symlinks respawn guard and the three framework v2.0.0 workarounds now live in
-// tests/e2e/support/framework.mjs (shared with record-fixtures.mjs / fixtures.test.mjs).
+// The three framework v2.0.0 workarounds now live in tests/e2e/support/framework.mjs
+// (shared with record-fixtures.mjs / fixtures.test.mjs).
 
 import config from './config.mjs';
-import { loadFramework, respawnPreservingSymlinks } from './support/framework.mjs';
+import { loadFramework } from './support/framework.mjs';
 import { acquireSpawnMutex } from './support/spawn-lock.mjs';
 import { installQuietConsole, terminalLine } from './support/quiet-console.mjs';
 
 /* global process */
 
-// NOTE: the framework import must stay DYNAMIC (inside the preserved branch) — a static import at
-// this file's top would be evaluated by the initial, un-preserved process before the respawn runs.
-if (respawnPreservingSymlinks()) {
-  // Parent: the symlink-preserving child inherited stdio and carries the run.
-} else {
-  const Framework = await loadFramework();
-
-  main(Framework).catch((err) => {
-    console.error(`\nE2E SMOKE FAIL: ${err.stack ?? err.message}`);
-    process.exitCode = 1;
-  });
-}
+// NOTE: loadFramework() keeps the framework import DYNAMIC (inside itself) — harmless either way
+// now that the dependency is a real node_modules/ directory (pinned GitHub install, 2026-11-05).
+const Framework = await loadFramework();
+main(Framework).catch((err) => {
+  console.error(`\nE2E SMOKE FAIL: ${err.stack ?? err.message}`);
+  process.exitCode = 1;
+});
 
 async function main(Framework) {
   acquireSpawnMutex(); // ownership before ANYTHING (see support/spawn-lock.mjs)

@@ -115,7 +115,7 @@
 //     EMPTY Hooks 'error' recorder) must ALL pass even though cases probe-and-restore;
 //   - screenshots ONLY on failure (never auto-opened).
 import config from './config.mjs';
-import { loadFramework, respawnPreservingSymlinks } from './support/framework.mjs';
+import { loadFramework } from './support/framework.mjs';
 import { acquireSpawnMutex } from './support/spawn-lock.mjs';
 import { installQuietConsole, terminalLine } from './support/quiet-console.mjs';
 import { loadRecordedFixture, STANDARD_FIXTURE_NAME } from './support/fixture-store.mjs';
@@ -174,15 +174,11 @@ import { deepEqualJson, flagNamespacesEqual } from './support/compare.mjs';
 
 /* global process */
 
-if (respawnPreservingSymlinks()) {
-  // Parent: the symlink-preserving child inherited stdio and carries the run.
-} else {
-  const Framework = await loadFramework();
-  main(Framework).catch((err) => {
-    console.error(`\nE2E HOOKS/SHEETS FAIL: ${err.stack ?? err.message}`);
-    process.exitCode = 1;
-  });
-}
+const Framework = await loadFramework();
+main(Framework).catch((err) => {
+  console.error(`\nE2E HOOKS/SHEETS FAIL: ${err.stack ?? err.message}`);
+  process.exitCode = 1;
+});
 
 const SCENE_ID = 'kdtSceneMainAAAA';
 const VIC_ACTOR_ID = 'kdtVicKnightAAAA';

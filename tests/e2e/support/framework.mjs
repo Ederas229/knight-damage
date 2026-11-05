@@ -1,13 +1,11 @@
 // Shared e2e bootstrap (hoisted verbatim from the Phase-1 smoke.test.mjs).
 //
-// Why each entry script must call `respawnPreservingSymlinks()` before touching the framework:
-// npm installs the `file:../foundryvtt-test-framework` devDependency as a Windows JUNCTION into the
-// sibling clone. Node realpaths junctioned module paths by default, so the framework's own
-// `playwright` import would resolve relative to the CLONE (no node_modules up its tree) and fail.
-// Respawn the entry script once with --preserve-symlinks so resolution stays inside
-// node_modules/foundryvtt-test-framework and finds the repo-hoisted playwright devDependency.
-// NOTE: framework imports must stay DYNAMIC (inside the preserved branch) — a static import at an
-// entry file's top would be evaluated by the initial, un-preserved process before the respawn runs.
+// HISTORY (2026-11-05): the framework devDependency switched from `file:../foundryvtt-test-framework`
+// (a sibling clone; npm installed it as a Windows JUNCTION, which forced every entry script to
+// respawn once with --preserve-symlinks so the clone-side playwright import resolved) to a PINNED
+// GitHub npm install: node_modules/foundryvtt-test-framework is now a REAL directory whose deps
+// resolve normally, so the respawn workaround was REMOVED. The framework's FoundryVTT-Node/ server
+// code deliberately lives OUTSIDE node_modules (survives npm ci) - see config.example.mjs.
 //
 // Why `loadFramework()` returns a SUBCLASS (all three workarounds are framework v2.0.0 bugs,
 // verified in Phase 1; upstream issues to file):
@@ -49,29 +47,12 @@ function portInUse(port, host = '127.0.0.1') {
   });
 }
 
-export const PRESERVE_SYMLINKS_ENV = 'KDT_E2E_PRESERVE_SYMLINKS';
-
 /**
- * If this process is NOT yet symlink-preserving, respawn itself once and return true
- * (the caller must then do nothing else — the child inherits stdio and carries the run).
- * Returns false inside the preserved child, where framework imports are allowed.
- */
-export function respawnPreservingSymlinks() {
-  if (process.env[PRESERVE_SYMLINKS_ENV]) return false;
-
-  const child = spawn(process.execPath, ['--preserve-symlinks', ...process.argv.slice(1)], {
-    stdio: 'inherit',
-    env: { ...process.env, [PRESERVE_SYMLINKS_ENV]: '1' },
-  });
-  child.on('exit', (code) => process.exit(code ?? 1));
-  return true;
-}
-
-/**
- * Load the framework (call ONLY from the symlink-preserving branch) and return the patched
- * subclass. The chrome-profile lives in the worktree-local test-data dir (derived from
- * config.testDataPath) so no absolute machine path enters the repo and concurrent worktrees
- * never share a profile; the shared clone is only ever read (server app + dice extension).
+ * Load the framework (dynamic import keeps resolution inside node_modules/... — trivially safe
+ * now that the dependency is a real installed directory) and return the patched subclass. The
+ * chrome-profile lives in the worktree-local test-data dir (derived from config.testDataPath) so
+ * no absolute machine path enters the repo and concurrent worktrees never share a profile; the
+ * machine-local server app (config.foundryNodePath) is only ever read.
  * Entry scripts acquire the ownership mutex (support/spawn-lock.mjs) BEFORE calling start().
  */
 export async function loadFramework() {

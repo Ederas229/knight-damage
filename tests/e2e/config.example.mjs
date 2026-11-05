@@ -20,12 +20,14 @@ export default {
 
   testDataPath: fileURLToPath(new URL('../../test-data', import.meta.url)),
 
-  // The sibling foundryvtt-test-framework clone that the `file:../foundryvtt-test-framework`
-  // devDependency junctions to. FoundryVTT-Node/ (the licensed node server, gitignored inside the
-  // clone — npm's junction never copies it) and dice-override/ live in the CLONE, not in node_modules.
-  foundryNodePath: fileURLToPath(new URL('../../../foundryvtt-test-framework/FoundryVTT-Node', import.meta.url)),
+  // Foundry's Node.js server code, kept OUTSIDE node_modules on purpose (npm ci wipes node_modules;
+  // a GitHub-installed package cannot carry the ~300 MB licensed app). Copy it ONCE per machine per
+  // the plan's Phase 0: robocopy <licensed install>/App/resources/app -> <this path>. The npm package
+  // (devDependency, pinned GitHub commit) is a real node_modules/ directory; dice-override/ ships
+  // inside it.
+  foundryNodePath: fileURLToPath(new URL('../../../knight-damage-e2e/FoundryVTT-Node', import.meta.url)),
   diceOverrideExtensionPath: fileURLToPath(
-    new URL('../../../foundryvtt-test-framework/dice-override', import.meta.url),
+    new URL('../../node_modules/foundryvtt-test-framework/dice-override', import.meta.url),
   ),
 
   // Server and browser settings

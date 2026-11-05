@@ -99,10 +99,14 @@ The e2e suites boot a real Foundry VTT v14 instance driven by
 **local-only and never run in CI**. They require:
 
 - a licensed local Foundry VTT v14 installation;
-- a clone of `foundryvtt-test-framework` as a sibling of this repository
-  (`../foundryvtt-test-framework`), with the Foundry Node server placed inside
-  it as `FoundryVTT-Node/` (a copy of the portable install's
-  `App/resources/app` works);
+- the `foundryvtt-test-framework` package — a normal devDependency installed
+  from its GitHub repository at a pinned commit by `npm install` (no manual
+  clone);
+- a one-time, machine-local copy of the licensed Foundry Node server (the
+  portable install's `App/resources/app`) into
+  `../knight-damage-e2e/FoundryVTT-Node` — deliberately outside
+  `node_modules` so `npm ci` never wipes it (procedure:
+  `docs/testing-plan.md`, Phase 0);
 - a `tests/e2e/config.mjs` file (copy `tests/e2e/config.example.mjs` and
   adjust the paths). It is gitignored and references a license copy — never
   commit it.
@@ -159,7 +163,7 @@ This project is being developed under the terms of the
 [LIMITED LICENSE AGREEMENT FOR MODULE DEVELOPMENT] for Foundry Virtual Tabletop.
 
 Please add your licensing information here. Add your chosen license as
-`LICENSE` file to the project root and mention it here.  If you don't know which
+`LICENSE` file to the project root and mention it here. If you don't know which
 license to choose, take a look at [Choose an open source license].
 
 [League Basic JS Module Template]: https://github.com/League-of-Foundry-Developers/FoundryVTT-Module-Template

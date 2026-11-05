@@ -46,7 +46,7 @@
     "eslint": "^9.9.1",
     "eslint-config-prettier": "^9.1.0",
     "eslint-plugin-prettier": "^5.2.1",
-    "foundryvtt-test-framework": "file:../foundryvtt-test-framework",
+    "foundryvtt-test-framework": "github:Tiamanti/foundryvtt-test-framework#f455406e1433b7fc3b89d6d9e5cb840e1d36d8bb",
     "fs-extra": "^11.2.0",
     "gulp": "^5.0.0",
     "gulp-sourcemaps": "^2.6.5",

@@ -23,7 +23,7 @@
 // (if present) — a drift is a hard failure; the baseline is never silently rebased.
 
 import config from './config.mjs';
-import { loadFramework, respawnPreservingSymlinks } from './support/framework.mjs';
+import { loadFramework } from './support/framework.mjs';
 import { acquireSpawnMutex } from './support/spawn-lock.mjs';
 import {
   PINNED_KNIGHT_VERSION,
@@ -76,15 +76,11 @@ const TRAIT_QUEUE_FILE = path.join(HERE, 'last-dice-queue-trait.json');
 // always ATTACK 3D6 total 7: two successes, one failure -> no exploit re-roll hijacking the queue,
 // roll.mjs:1008).
 
-if (respawnPreservingSymlinks()) {
-  // Parent: the symlink-preserving child inherited stdio and carries the run.
-} else {
-  const Framework = await loadFramework();
-  main(Framework).catch((err) => {
-    console.error(`\nE2E RECORD FAIL: ${err.stack ?? err.message}`);
-    process.exitCode = 1;
-  });
-}
+const Framework = await loadFramework();
+main(Framework).catch((err) => {
+  console.error(`\nE2E RECORD FAIL: ${err.stack ?? err.message}`);
+  process.exitCode = 1;
+});
 
 async function main(Framework) {
   acquireSpawnMutex(); // ownership before ANYTHING (see support/spawn-lock.mjs)
