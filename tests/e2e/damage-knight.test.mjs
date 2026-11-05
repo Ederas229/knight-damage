@@ -513,10 +513,12 @@ async function main(Framework) {
             !demiContent.includes('Santé :'),
           `content: ${demiContent}`,
         );
-        // Mid-case baseline restore (review-6 D5): the file's own restoreBaselineBetween — the
-        // old cleanup() wrapped the restore in an UNAWAITED .catch, so the Double sub-apply
-        // could start while the victim stats were still draining. Sink the Demi ids FIRST, then
-        // restore and WAIT for the seed stats before the next replay.
+        // Mid-case baseline restore (review-6 D5): the file's own restoreBaselineBetween — the old
+        // cleanup() awaited the restore but swallowed its errors (.catch(() => {})), and its real
+        // gap was never WAITING for the fire-and-forget system sync to drain, so the Double
+        // sub-apply could start while the victim stats were still settling (the waitFor in
+        // restoreBaselineBetween is what closes that gap). Sink the Demi ids FIRST, then restore
+        // and WAIT for the seed stats before the next replay.
         await fw
           .executeInFoundry(deleteMessagesInPage, [demiMsg, demiRecap, ...recapIds].filter(Boolean))
           .catch((err) => console.log(`[damage] case3 mid-case message-delete FAILED: ${err.message ?? err}`));

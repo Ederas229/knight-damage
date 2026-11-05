@@ -316,7 +316,6 @@ describe('recap hover wiring via the registered renderChatMessageHTML hook (knig
   });
 
   it('an isRecap message binds EXACTLY mouseenter + mouseleave on the ROOT; with canvas.ready the real handlers resolve the speaker token via fromUuidSync and drive token._onHoverIn/_onHoverOut; without canvas.ready BOTH stay silent no-ops', async () => {
-    registerUuid(ATTACKER_UUID, makeActor('vehicule', {}, { id: 'actor-veh' }));
     const spy = makeHoverTokenSpy();
     registerUuid(ATTACKER_UUID, { uuid: ATTACKER_UUID, object: spy.object });
 
@@ -471,7 +470,7 @@ describe('handleClickRevertDamage via the registered renderChatMessageHTML hook 
   }
 
   // Drives the REAL registration: the hook handler (message, html) binds the
-  // click through addRevertDamageEvent (knight-damage.js:290-292), and the
+  // click through addRevertDamageEvent (knight-damage.js:297-298), and the
   // recorder hands back the bound { data, handler }. The recap content carries
   // no Dégâts/Débordement marker, so addApplyDamageButton early-returns and
   // .revert-damage carries exactly one click binding.
